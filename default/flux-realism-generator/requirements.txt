@@ -1,0 +1,18 @@
+# FastAPI 后端框架
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Hugging Face Inference API 客户端
+huggingface_hub>=0.26.0
+
+# 图像处理
+Pillow>=10.0.0
+
+# 环境变量管理
+python-dotenv>=1.0.0
+
+# 数据验证
+pydantic>=2.0.0
+
+# HTTP 请求（用于 REST API 直接调用演示）
+requests>=2.31.0

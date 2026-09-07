@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flux Realism 图像生成器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部标题栏 -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1>🎨 Flux Realism 图像生成器</h1>
+                <span class="header-subtitle">XLabs-AI/flux-RealismLora · Hugging Face Inference API</span>
+            </div>
+            <div class="header-right">
+                <span id="status-badge" class="status-badge checking">检查中...</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- 左侧控制面板 -->
+            <section class="control-panel">
+                <!-- 预设提示词 -->
+                <div class="panel-section">
+                    <label class="section-title">📚 预设提示词模板</label>
+                    <div class="preset-buttons">
+                        <button class="preset-btn" data-preset="portrait">人物肖像</button>
+                        <button class="preset-btn" data-preset="landscape">风景摄影</button>
+                        <button class="preset-btn" data-preset="food">美食特写</button>
+                        <button class="preset-btn" data-preset="street">街头摄影</button>
+                    </div>
+                </div>
+
+                <!-- 提示词输入 -->
+                <div class="panel-section">
+                    <label class="section-title" for="prompt">
+                        ✏️ 提示词 (Prompt)
+                        <span class="char-count" id="prompt-count">0 / 2000</span>
+                    </label>
+                    <textarea
+                        id="prompt"
+                        placeholder="描述你想要生成的图像... 例如：A close-up portrait of an elderly fisherman, weathered skin, deep wrinkles, white beard, wearing a yellow raincoat, soft overcast lighting, shot on Canon EOS R5, 85mm f/1.4, ultra realistic"
+                        maxlength="2000"
+                        rows="6"
+                    ></textarea>
+                </div>
+
+                <!-- 负向提示词 -->
+                <div class="panel-section">
+                    <label class="section-title" for="negative-prompt">
+                        🚫 负向提示词 (Negative Prompt)
+                        <span class="char-count" id="neg-count">0 / 1000</span>
+                    </label>
+                    <textarea
+                        id="negative-prompt"
+                        placeholder="描述不希望出现的元素... 例如：cartoon, anime, low quality, blurry, deformed"
+                        maxlength="1000"
+                        rows="3"
+                    >cartoon, anime, illustration, painting, low quality, blurry, deformed, extra fingers, watermark, text</textarea>
+                </div>
+
+                <!-- 高级参数 -->
+                <div class="panel-section">
+                    <label class="section-title">⚙️ 高级参数</label>
+
+                    <div class="param-grid">
+                        <div class="param-item">
+                            <label for="width">宽度 (px)</label>
+                            <select id="width">
+                                <option value="512">512</option>
+                                <option value="768">768</option>
+                                <option value="1024" selected>1024</option>
+                                <option value="1280">1280</option>
+                                <option value="1536">1536</option>
+                                <option value="2048">2048</option>
+                            </select>
+                        </div>
+
+                        <div class="param-item">
+                            <label for="height">高度 (px)</label>
+                            <select id="height">
+                                <option value="512">512</option>
+                                <option value="768">768</option>
+                                <option value="1024" selected>1024</option>
+                                <option value="1280">1280</option>
+                                <option value="1536">1536</option>
+                                <option value="2048">2048</option>
+                            </select>
+                        </div>
+
+                        <div class="param-item full-width">
+                            <label for="steps">
+                                去噪步数 (Steps)
+                                <span class="param-value" id="steps-value">28</span>
+                            </label>
+                            <input type="range" id="steps" min="1" max="100" value="28" step="1">
+                        </div>
+
+                        <div class="param-item full-width">
+                            <label for="guidance">
+                                引导尺度 (Guidance Scale)
+                                <span class="param-value" id="guidance-value">3.5</span>
+                            </label>
+                            <input type="range" id="guidance" min="0" max="20" value="3.5" step="0.1">
+                        </div>
+
+                        <div class="param-item full-width">
+                            <label for="seed">
+                                随机种子 (Seed)
+                                <button class="mini-btn" id="random-seed" title="随机生成种子">🎲</button>
+                            </label>
+                            <input type="number" id="seed" placeholder="留空为随机" min="0" max="4294967295">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 生成按钮 -->
+                <div class="panel-section">
+                    <button id="generate-btn" class="generate-btn">
+                        <span class="btn-text">🚀 生成图像</span>
+                        <span class="btn-loading" hidden>
+                            <span class="spinner"></span>
+                            生成中...
+                        </span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- 右侧图像展示区 -->
+            <section class="display-panel">
+                <div class="display-header">
+                    <span class="section-title">🖼️ 生成结果</span>
+                    <div class="display-actions">
+                        <button id="download-btn" class="action-btn" disabled>💾 下载</button>
+                        <button id="fullscreen-btn" class="action-btn" disabled>🔍 全屏</button>
+                    </div>
+                </div>
+
+                <div class="image-container" id="image-container">
+                    <!-- 空状态 -->
+                    <div class="empty-state" id="empty-state">
+                        <div class="empty-icon">🖼️</div>
+                        <p>在左侧输入提示词，点击「生成图像」开始创作</p>
+                        <p class="empty-hint">模型：XLabs-AI/flux-RealismLora</p>
+                    </div>
+
+                    <!-- 加载状态 -->
+                    <div class="loading-state" id="loading-state" hidden>
+                        <div class="loading-animation">
+                            <div class="loading-ring"></div>
+                            <div class="loading-ring"></div>
+                            <div class="loading-ring"></div>
+                        </div>
+                        <p class="loading-text">正在调用 Flux 模型生成图像...</p>
+                        <p class="loading-hint">通常需要 10-30 秒，请耐心等待</p>
+                    </div>
+
+                    <!-- 图像结果 -->
+                    <div class="result-state" id="result-state" hidden>
+                        <img id="result-image" alt="生成结果" />
+                    </div>
+
+                    <!-- 错误状态 -->
+                    <div class="error-state" id="error-state" hidden>
+                        <div class="error-icon">⚠️</div>
+                        <p id="error-message">生成失败</p>
+                    </div>
+                </div>
+
+                <!-- 生成参数信息 -->
+                <div class="result-info" id="result-info" hidden>
+                    <details>
+                        <summary>📋 查看生成参数</summary>
+                        <div class="params-display" id="params-display"></div>
+                    </details>
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部信息 -->
+        <footer class="app-footer">
+            <p>Powered by Hugging Face Inference API · Model: XLabs-AI/flux-RealismLora · Provider: fal-ai</p>
+        </footer>
+    </div>
+
+    <!-- 全屏图片模态框 -->
+    <div id="modal-overlay" class="modal-overlay" hidden>
+        <div class="modal-content">
+            <button class="modal-close" id="modal-close">✕</button>
+            <img id="modal-image" alt="全屏查看" />
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
