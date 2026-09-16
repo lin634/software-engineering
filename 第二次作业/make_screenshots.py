@@ -39,20 +39,20 @@ g.state = Game.MENU
 g.draw()
 shot("01_menu.png")
 
-# 2) 游戏界面（第 1 关）
-g.load_level(0)
+# 2) 游戏界面（第 5 关 · 密阵初布，15 支箭）
+g.load_level(4)
 g.state = Game.PLAYING
 g.draw()
 shot("02_play_level1.png")
 
-# 3) 提示功能（第 3 关，高亮可射出箭头）
-g.load_level(2)
+# 3) 提示功能（同关，高亮可射出箭头）
+g.load_level(4)
 g.state = Game.PLAYING
 g.hint_t = 2.2
 g.draw()
 shot("03_hint.png")
 
-# 4) 箭头飞出动画（第 1 关射出一支）
+# 4) 箭头飞出动画（第 1 关，射出一支）
 g.load_level(0)
 g.state = Game.PLAYING
 g.click_cell(1, 2)   # (1,2)R 飞出
@@ -61,17 +61,19 @@ g.draw()
 shot("04_arrow_flyout.png")
 flush(g, 0.8)
 
-# 5) 通关界面（清空第 1 关剩余箭头）
-g.click_cell(3, 3)    # (3,3)L 飞出 -> LEVEL_CLEAR
+# 5) 通关界面（清空第 1 关剩余箭头：先 (3,2)U 再 (4,1)L）
+g.click_cell(3, 2)    # (3,2)U 飞出
+flush(g, 0.4)
+g.click_cell(4, 1)    # (4,1)L 飞出 -> LEVEL_CLEAR
 flush(g, 0.4)
 g.draw()
 shot("05_level_clear.png")
 
-# 6) 失败界面（第 2 关，强行耗尽失误）
-g.load_level(1)
+# 6) 失败界面（第 5 关，强行耗尽失误）
+g.load_level(4)
 g.state = Game.PLAYING
 g.mistakes = 1        # 只剩 1 次，再失误即失败
-g.click_cell(0, 1)    # (0,1)R 被 (0,2)D 阻挡 -> GAME_OVER
+g.click_cell(1, 0)    # (1,0)R 被 (1,1)R 阻挡 -> GAME_OVER
 g.draw()
 shot("06_game_over.png")
 

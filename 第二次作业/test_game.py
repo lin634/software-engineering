@@ -102,10 +102,10 @@ def run():
 
     # ---- T06 ----
     print("T06 游戏进行中重新开始")
-    g.load_level(1)               # 层层递进（含阻挡关系）
+    g.load_level(1)               # 转角相依（含阻挡关系）
     init = dirs(g)
-    g.click_cell(0, 1)            # (0,1)R 被 (0,2)D 阻挡
-    mid_ok = g.mistakes == LEVELS[1]["mistakes"] - 1 and g.board[0][1] is not None
+    g.click_cell(1, 1)            # (1,1)R 被 (1,2)D 阻挡
+    mid_ok = g.mistakes == LEVELS[1]["mistakes"] - 1 and g.board[1][1] is not None
     g.load_level(1)               # 模拟按 R 重新开始
     check("T06", mid_ok and dirs(g) == init and g.mistakes == LEVELS[1]["mistakes"])
 
