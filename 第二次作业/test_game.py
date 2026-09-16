@@ -25,6 +25,7 @@ from verify_levels import solve
 
 def setup(game, grid, mistakes=3):
     """用自定义网格直接构造一关（不影响 LEVELS）。"""
+    game.current_level = {"name": "test", "mistakes": mistakes, "grid": grid}
     game.rows = len(grid)
     game.cols = len(grid[0])
     game.board = [[Arrow(grid[r][c]) if grid[r][c] in "UDLR" else None
@@ -98,17 +99,17 @@ def run():
     setup(g, [".RR.", "....", "....", "...."], mistakes=1)
     g.click_cell(0, 1)            # 阻挡 -> 失误 -> GAME_OVER
     over = g.mistakes == 0 and g.state == Game.GAME_OVER
-    g._activate()                 # 失败后重试 -> 重新开始
-    check("T05", over and g.state == Game.PLAYING and g.mistakes == LEVELS[g.level_index]["mistakes"])
+    g._activate()                 # 失败后重试 -> 重新开始（恢复测试网格满失误 1）
+    check("T05", over and g.state == Game.PLAYING and g.mistakes == 1)
 
     # ---- T06 ----
     print("T06 游戏进行中重新开始")
-    g.load_level(1)               # 转角相依（含阻挡关系）
+    setup(g, [".RR.", "....", "....", "...."])   # (0,1)R 被 (0,2)R 阻挡
     init = dirs(g)
-    g.click_cell(1, 1)            # (1,1)R 被 (1,2)D 阻挡
-    mid_ok = g.mistakes == LEVELS[1]["mistakes"] - 1 and g.board[1][1] is not None
-    g.load_level(1)               # 模拟按 R 重新开始
-    check("T06", mid_ok and dirs(g) == init and g.mistakes == LEVELS[1]["mistakes"])
+    g.click_cell(0, 1)            # 失误一次
+    mid_ok = g.mistakes == 2 and g.board[0][1] is not None
+    g.restart_level()             # 模拟按 R 重新开始
+    check("T06", mid_ok and dirs(g) == init and g.mistakes == 3)
 
     # ---- T07（附加）随机模式：生成关卡均保证可通关 ----
     print("T07 随机模式：随机分布且保证可通关")

@@ -57,156 +57,241 @@ C_BTN_HOVER = (74, 82, 116)
 # 方向向量 (dr, dc)：U 行减=上，D 行增=下，L 列减=左，R 列增=右
 DIR_VEC = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
 
-# 关卡数据：'.' 为空地，U/D/L/R 为对应方向的箭头
+# 关卡数据：'.' 为空地，U/D/L/R 为对应方向的箭头。
+# 布局由 generate_random_level 以固定种子生成，箭头尽量随机分布，
+# 且每关都经求解器验证可通关。
 LEVELS = [
     {
         "name": "初识箭阵",
         "mistakes": 3,
         "grid": [
             ".....",
-            "..R..",
             ".....",
-            "..U..",
-            ".L...",
+            "D....",
+            "....R",
+            ".R.D.",
         ],
     },
     {
-        "name": "转角相依",
+        "name": "小试锋芒",
         "mistakes": 4,
         "grid": [
-            "......",
-            ".RD...",
-            "......",
+            ".L..U.",
+            "...R..",
+            "DU....",
+            "R.....",
+            ".....R",
             ".D....",
-            "...UL.",
-            "..R...",
         ],
     },
     {
-        "name": "双链并行",
+        "name": "渐入佳境",
         "mistakes": 4,
         "grid": [
-            "......",
-            ".RRR..",
-            "......",
-            ".D..U.",
-            ".D..U.",
-            "....L.",
+            "..DR.U",
+            ".L....",
+            "...R..",
+            "..D..R",
+            ".U...D",
+            ".D....",
         ],
     },
     {
-        "name": "纵横交错",
+        "name": "左右逢源",
         "mistakes": 5,
         "grid": [
-            ".......",
-            ".RRRR..",
-            ".......",
-            ".D..U..",
-            ".D..U..",
-            ".......",
-            ".L...R.",
+            ".L.....",
+            "R...U..",
+            ".U.....",
+            "U.L...L",
+            ".LD..L.",
+            "..R....",
+            "....U..",
         ],
     },
     {
-        "name": "密阵初布",
+        "name": "密阵初现",
         "mistakes": 6,
         "grid": [
-            ".......",
-            "RRRRRR.",
-            ".D...U.",
-            ".D.R.U.",
-            ".L...R.",
-            ".......",
-            ".D...U.",
+            "..U...U",
+            "...L...",
+            "D.....D",
+            "L.U..L.",
+            "D...DR.",
+            "L...R..",
+            "....D.L",
         ],
     },
     {
-        "name": "八面埋伏",
+        "name": "迷雾重重",
         "mistakes": 7,
         "grid": [
-            "........",
-            ".RRRRR..",
-            "........",
-            ".D....U.",
-            ".D.RR.U.",
-            ".L....R.",
-            "........",
-            ".D....U.",
+            "...U...U",
+            "R..R....",
+            "....U.R.",
+            "LR...U..",
+            ".U.L...D",
+            ".U..R...",
+            "U....D..",
+            "....LL..",
         ],
     },
     {
-        "name": "千军万马",
+        "name": "箭雨滂沱",
         "mistakes": 8,
         "grid": [
-            "........",
-            "RRRRRRR.",
-            ".D....U.",
-            ".D.RR.U.",
-            ".D.L..U.",
-            ".L....R.",
-            "..R.....",
-            ".D....U.",
+            "L.R.....",
+            ".....D.L",
+            ".RDR....",
+            "L...LRR.",
+            "..L..DLD",
+            "D....R..",
+            ".......R",
+            "..LL..DD",
         ],
     },
     {
-        "name": "终极箭阵",
+        "name": "万箭归宗",
         "mistakes": 9,
         "grid": [
-            "........",
-            "RRRRRRR.",
-            ".D...U.U",
-            ".D.RR.U.",
-            ".D.L..U.",
-            ".L...RR.",
-            ".RR.....",
-            ".D....U.",
+            "DU..U..L",
+            "....UR..",
+            ".LL..U..",
+            ".R.R....",
+            "...U..L.",
+            "..U.LRU.",
+            ".D.L.RR.",
+            "L..UU.R.",
         ],
     },
 ]
 
-def generate_random_level(rows, cols, n_arrows, seed=None):
-    """构造一个箭头随机分布、且保证可通关的关卡网格（返回字符串列表）。
+def _pick_direction(arrows, rows, cols, r, c, rng):
+    """随机选一个可行方向，避免与已有箭头形成“同线相对”的必死死局。
 
-    原理：为 n_arrows 支箭随机分配“消除步骤”1..N，按步骤从大到小放置；
-    放置每支箭时要求其前进方向到边界之间不包含任何已放置（步骤更大、
-    即更晚消除）的箭头。这样最终按步骤 1..N 消除时，每支箭面对的都是
-    空路，必然可通关。
-    若某一步无法放置（棋盘过满），返回 None，由调用方换随机种子重试。
+    例如新箭头朝右时，若其右侧已存在朝左的箭头，二者相对互挡必死，
+    该方向不可取；但允许被垂直方向或同向箭头“挡路”（那是正常依赖）。
+    """
+    dirs = list(DIR_VEC)
+    rng.shuffle(dirs)
+    facing = {"R": "L", "L": "R", "D": "U", "U": "D"}
+    for d in dirs:
+        dr, dc = DIR_VEC[d]
+        nr, nc = r + dr, c + dc
+        ok = True
+        while 0 <= nr < rows and 0 <= nc < cols:
+            if (nr, nc) in arrows and arrows[(nr, nc)] == facing[d]:
+                ok = False
+                break
+            nr += dr
+            nc += dc
+        if ok:
+            return d
+    return None
+
+
+def _arrows_to_grid(arrows, rows, cols):
+    return ["".join(arrows.get((r, c), ".") for c in range(cols)) for r in range(rows)]
+
+
+def _is_solvable(arrows, rows, cols):
+    """依赖图无环 ⇔ 存在合法消除顺序（与 verify_levels 的 DFS 等价但更快）。
+
+    边 X -> Y 表示 X 位于 Y 的前进射线上、必须先于 Y 消除。
+    """
+    adj = {p: [] for p in arrows}
+    for (r, c), d in arrows.items():
+        dr, dc = DIR_VEC[d]
+        nr, nc = r + dr, c + dc
+        while 0 <= nr < rows and 0 <= nc < cols:
+            if (nr, nc) in arrows:
+                adj[(nr, nc)].append((r, c))
+            nr += dr
+            nc += dc
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {p: WHITE for p in arrows}
+
+    def dfs(u):
+        color[u] = GRAY
+        for v in adj[u]:
+            if color[v] == GRAY:
+                return False
+            if color[v] == WHITE and not dfs(v):
+                return False
+        color[u] = BLACK
+        return True
+
+    return all(color[u] != WHITE or dfs(u) for u in arrows)
+
+
+def _random_ok(arrows, rows, cols):
+    """分布“尽量随机”的约束：杜绝整行/整列同向、连续同向过长、箭头过度扎堆。"""
+    def line_ok(items, limit):
+        if not items:
+            return True
+        if len(items) > limit:
+            return False
+        dirs = [d for _, d in items]
+        if len(dirs) >= 3 and len(set(dirs)) == 1:
+            return False                        # 整行/整列全是同一方向
+        run = 1
+        for i in range(1, len(items)):
+            run = run + 1 if items[i][1] == items[i - 1][1] else 1
+            if run > 2:
+                return False                    # 连续 3 支以上同向
+        return True
+
+    for r in range(rows):
+        items = sorted((c, arrows[(r, c)]) for c in range(cols) if (r, c) in arrows)
+        if not line_ok(items, max(1, int(cols * 0.6))):
+            return False
+    for c in range(cols):
+        items = sorted((r, arrows[(r, c)]) for r in range(rows) if (r, c) in arrows)
+        if not line_ok(items, max(1, int(rows * 0.6))):
+            return False
+    return True
+
+
+def _random_place(rng, rows, cols, n_arrows):
+    """随机撒 n_arrows 支箭头（位置均匀随机、方向避免相对死局）。"""
+    cells = [(r, c) for r in range(rows) for c in range(cols)]
+    rng.shuffle(cells)
+    arrows = {}
+    for r, c in cells[:n_arrows]:
+        d = _pick_direction(arrows, rows, cols, r, c, rng)
+        if d is None:
+            return None
+        arrows[(r, c)] = d
+    return arrows
+
+
+def generate_random_level(rows, cols, n_arrows, seed=None):
+    """生成一个箭头尽量随机分布、且保证可通关的关卡（返回字符串列表）。
+
+    随机撒点 + 依赖图无环判定 + “尽量随机”分布约束，未通过则换种子重试；
+    若始终无法同时满足（极端情况），放宽为“仅保证可通关”，保证游戏不卡死。
     """
     rng = random.Random(seed)
-    dirs = list(DIR_VEC)
-    grid = [[None] * cols for _ in range(rows)]
-    for step in range(n_arrows, 0, -1):          # 步骤从 N 到 1 放置
-        placed = False
-        for _ in range(500):                     # 随机试放
-            r = rng.randrange(rows)
-            c = rng.randrange(cols)
-            if grid[r][c] is not None:
-                continue
-            d = rng.choice(dirs)
-            dr, dc = DIR_VEC[d]
-            nr, nc = r + dr, c + dc
-            blocked = False
-            while 0 <= nr < rows and 0 <= nc < cols:
-                if grid[nr][nc] is not None:     # 路径上有更晚消除的箭头
-                    blocked = True
-                    break
-                nr += dr
-                nc += dc
-            if not blocked:
-                grid[r][c] = d
-                placed = True
-                break
-        if not placed:
-            return None
-    return ["".join(ch if ch is not None else "." for ch in row) for row in grid]
+    for _ in range(3000):
+        arrows = _random_place(rng, rows, cols, n_arrows)
+        if arrows is None:
+            continue
+        if _is_solvable(arrows, rows, cols) and _random_ok(arrows, rows, cols):
+            return _arrows_to_grid(arrows, rows, cols)
+    for _ in range(3000):                        # 放宽：仅保证可通关
+        arrows = _random_place(rng, rows, cols, n_arrows)
+        if arrows is None:
+            continue
+        if _is_solvable(arrows, rows, cols):
+            return _arrows_to_grid(arrows, rows, cols)
+    return None
 
 
 def random_level_spec(level_num):
     """随随机模式关卡序号递增难度：棋盘尺寸与箭头数量逐步加大。"""
     size = min(8, 5 + (level_num - 1) // 3)           # 5 -> 6 -> 7 -> 8
     cells = size * size
-    n_arrows = min(int(cells * 0.45), 2 + 2 * level_num)  # 4, 6, 8, 10, ...
+    n_arrows = min(int(cells * 0.42), 2 + 2 * level_num)  # 4, 6, 8, 10, ...
     mistakes = max(3, n_arrows // 3)
     return size, size, n_arrows, mistakes
 

@@ -32,6 +32,26 @@ def flush(game, seconds=0.6):
         game.update(1 / 60, (0, 0))
 
 
+def find_clearable(game):
+    """找一支当前可以飞出的箭头。"""
+    for r in range(game.rows):
+        for c in range(game.cols):
+            a = game.board[r][c]
+            if a and game.is_clear(r, c, a.d):
+                return (r, c)
+    return None
+
+
+def find_blocked(game):
+    """找一支当前被阻挡的箭头。"""
+    for r in range(game.rows):
+        for c in range(game.cols):
+            a = game.board[r][c]
+            if a and not game.is_clear(r, c, a.d):
+                return (r, c)
+    return None
+
+
 g = Game(screen)
 
 # 1) 开始界面
@@ -39,7 +59,7 @@ g.state = Game.MENU
 g.draw()
 shot("01_menu.png")
 
-# 2) 游戏界面（第 5 关 · 密阵初布，15 支箭）
+# 2) 游戏界面（第 5 关）
 g.load_level(4)
 g.state = Game.PLAYING
 g.draw()
@@ -52,20 +72,27 @@ g.hint_t = 2.2
 g.draw()
 shot("03_hint.png")
 
-# 4) 箭头飞出动画（第 1 关，射出一支）
+# 4) 箭头飞出动画（第 1 关，射出一支可飞的箭头）
 g.load_level(0)
 g.state = Game.PLAYING
-g.click_cell(1, 2)   # (1,2)R 飞出
+cell = find_clearable(g)
+assert cell, "第 1 关应存在可飞出的箭头"
+g.click_cell(*cell)
 g.update(0.02, (0, 0))
 g.draw()
 shot("04_arrow_flyout.png")
 flush(g, 0.8)
 
-# 5) 通关界面（清空第 1 关剩余箭头：先 (3,2)U 再 (4,1)L）
-g.click_cell(3, 2)    # (3,2)U 飞出
-flush(g, 0.4)
-g.click_cell(4, 1)    # (4,1)L 飞出 -> LEVEL_CLEAR
-flush(g, 0.4)
+# 5) 通关界面（按可飞顺序清空第 1 关全部箭头）
+guard = 0
+while g.arrows_left() > 0 and g.state == Game.PLAYING and guard < 100:
+    guard += 1
+    cell = find_clearable(g)
+    if cell is None:
+        break
+    g.click_cell(*cell)
+    flush(g, 0.25)
+flush(g, 0.3)
 g.draw()
 shot("05_level_clear.png")
 
@@ -73,7 +100,9 @@ shot("05_level_clear.png")
 g.load_level(4)
 g.state = Game.PLAYING
 g.mistakes = 1        # 只剩 1 次，再失误即失败
-g.click_cell(1, 0)    # (1,0)R 被 (1,1)R 阻挡 -> GAME_OVER
+cell = find_blocked(g)
+assert cell, "第 5 关应存在被阻挡的箭头"
+g.click_cell(*cell)   # 被阻挡 -> GAME_OVER
 g.draw()
 shot("06_game_over.png")
 
