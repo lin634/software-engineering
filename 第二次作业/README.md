@@ -33,7 +33,7 @@
 第二次作业/
 ├── arrow_game.py         # 游戏主程序（界面 + 逻辑 + 动画）
 ├── verify_levels.py      # 关卡可解性验证工具（DFS 求解器，开发期使用）
-├── test_game.py          # 自动化逻辑测试 T01–T06（headless，无需显示器）
+├── test_game.py          # 自动化逻辑测试 T01–T07（headless，无需显示器）
 ├── make_screenshots.py   # 自动生成界面截图（headless）
 ├── requirements.txt      # 依赖列表
 ├── README.md             # 本文件
@@ -45,7 +45,8 @@
     ├── 04_arrow_flyout.png
     ├── 05_level_clear.png
     ├── 06_game_over.png
-    └── 07_victory.png
+    ├── 07_victory.png
+    └── 08_random_mode.png
 ```
 
 ## 安装与运行
@@ -101,6 +102,9 @@ python arrow_game.py
 ### 全部通关
 ![全部通关](screenshots/07_victory.png)
 
+### 随机模式（箭头随机分布，难度递增）
+![随机模式](screenshots/08_random_mode.png)
+
 ## 关卡说明
 
 | 关卡 | 名称 | 规模 | 失误上限 | 设计要点 |
@@ -123,6 +127,7 @@ python arrow_game.py
 - **飞出 + 碰撞动画**：飞出箭头带渐隐位移动画，碰撞箭头带晃动与红色高亮；
 - **失误机制**：圆点直观显示剩余次数，耗尽即失败；
 - **8 个可通关关卡**（3~24 支箭），难度递增；
+- **随机模式**：主菜单可选无尽模式，每关箭头随机分布、难度逐关递增，生成器在构造上保证可通关；
 - **附加功能**：撤销上一步（`Z`）、提示（`H`）、星级评价（按失误数给 1–3 星）、一键截图（`F2`）；
 - **零素材依赖**，跨机器可直接运行。
 

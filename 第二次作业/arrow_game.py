@@ -9,6 +9,8 @@
     · 没有阻挡 —— 箭头飞出棋盘并消失；
     · 有阻挡   —— 箭头不能消失，发生碰撞并消耗 1 次失误机会。
   清空本关全部箭头即过关；失误次数耗尽则失败。
+  主菜单可选择「随机模式」：每关箭头随机分布、难度逐关递增，
+  生成器在构造上保证关卡可通关（附加功能）。
 
 操作：
   鼠标左键  点击箭头尝试射出
@@ -23,6 +25,7 @@ import os
 import sys
 import math
 import time
+import random
 from dataclasses import dataclass, field
 
 import pygame
@@ -160,6 +163,53 @@ LEVELS = [
         ],
     },
 ]
+
+def generate_random_level(rows, cols, n_arrows, seed=None):
+    """构造一个箭头随机分布、且保证可通关的关卡网格（返回字符串列表）。
+
+    原理：为 n_arrows 支箭随机分配“消除步骤”1..N，按步骤从大到小放置；
+    放置每支箭时要求其前进方向到边界之间不包含任何已放置（步骤更大、
+    即更晚消除）的箭头。这样最终按步骤 1..N 消除时，每支箭面对的都是
+    空路，必然可通关。
+    若某一步无法放置（棋盘过满），返回 None，由调用方换随机种子重试。
+    """
+    rng = random.Random(seed)
+    dirs = list(DIR_VEC)
+    grid = [[None] * cols for _ in range(rows)]
+    for step in range(n_arrows, 0, -1):          # 步骤从 N 到 1 放置
+        placed = False
+        for _ in range(500):                     # 随机试放
+            r = rng.randrange(rows)
+            c = rng.randrange(cols)
+            if grid[r][c] is not None:
+                continue
+            d = rng.choice(dirs)
+            dr, dc = DIR_VEC[d]
+            nr, nc = r + dr, c + dc
+            blocked = False
+            while 0 <= nr < rows and 0 <= nc < cols:
+                if grid[nr][nc] is not None:     # 路径上有更晚消除的箭头
+                    blocked = True
+                    break
+                nr += dr
+                nc += dc
+            if not blocked:
+                grid[r][c] = d
+                placed = True
+                break
+        if not placed:
+            return None
+    return ["".join(ch if ch is not None else "." for ch in row) for row in grid]
+
+
+def random_level_spec(level_num):
+    """随随机模式关卡序号递增难度：棋盘尺寸与箭头数量逐步加大。"""
+    size = min(8, 5 + (level_num - 1) // 3)           # 5 -> 6 -> 7 -> 8
+    cells = size * size
+    n_arrows = min(int(cells * 0.45), 2 + 2 * level_num)  # 4, 6, 8, 10, ...
+    mistakes = max(3, n_arrows // 3)
+    return size, size, n_arrows, mistakes
+
 
 # 指向“右”的基础多边形（归一化到 [-0.5, 0.5]），绘制时按方向旋转
 RIGHT_POLY = [
@@ -313,9 +363,14 @@ class Game:
         self.bg = self._make_bg()
         self.state = self.MENU
         self.level_index = 0
+        self.random_mode = False       # True 时玩随机关卡（无尽模式）
+        self.random_num = 0            # 随机模式下已过的关卡数
+        self.current_level = LEVELS[0]  # 当前加载的关卡数据（固定或随机）
 
         # 各界面按钮
-        self.menu_btn = Button((WIN_W // 2 - 120, 430, 240, 62), "开始游戏")
+        self.menu_btn = Button((WIN_W // 2 - 120, 425, 240, 58), "开始游戏")
+        self.random_btn = Button((WIN_W // 2 - 120, 505, 240, 54),
+                                 "随机模式", text_color=C_OK)
         self.next_btn = Button((WIN_W // 2 - 120, WIN_H // 2 + 30, 240, 54), "下一关")
         self.retry_btn = Button((WIN_W // 2 - 120, WIN_H // 2 + 30, 240, 54), "重新开始")
         self.menu_return_btn = Button((WIN_W // 2 - 110, WIN_H // 2 + 98, 220, 44),
@@ -337,9 +392,9 @@ class Game:
             surf.fill(lerp_color(C_BG_TOP, C_BG_BOT, t), (0, y, WIN_W, 1))
         return surf
 
-    def load_level(self, i):
-        self.level_index = i
-        lvl = LEVELS[i]
+    def _load_dict(self, lvl):
+        """按关卡数据 dict 装载棋盘并居中。"""
+        self.current_level = lvl
         self.rows = len(lvl["grid"])
         self.cols = len(lvl["grid"][0])
         self.board = [[Arrow(lvl["grid"][r][c]) if lvl["grid"][r][c] in DIR_VEC else None
@@ -356,6 +411,38 @@ class Game:
         gh = self.rows * CELL
         self.grid_x = (WIN_W - gw) // 2
         self.grid_y = 120 + (WIN_H - 120 - 40 - gh) // 2
+
+    def load_level(self, i):
+        """加载固定关卡 i（关卡/画廊模式）。"""
+        self.random_mode = False
+        self.level_index = i
+        self._load_dict(LEVELS[i])
+
+    def load_random_level(self):
+        """生成并加载一个随机分布且保证可通关的关卡。"""
+        self.random_num += 1
+        self.random_mode = True
+        rows, cols, n, mistakes = random_level_spec(self.random_num)
+        grid = None
+        for _ in range(300):                       # 换种子重试，几乎不可能全失败
+            grid = generate_random_level(rows, cols, n)
+            if grid:
+                break
+        if grid is None:                           # 极端兜底：退回固定第 8 关
+            grid = LEVELS[-1]["grid"]
+            mistakes = LEVELS[-1]["mistakes"]
+        self._load_dict({"name": f"随机箭阵（{n} 支）", "mistakes": mistakes,
+                         "grid": grid})
+
+    def restart_level(self):
+        """重新开始当前关卡（随机模式也恢复为同一布局）。"""
+        self._load_dict(self.current_level)
+        self.set_feedback("已重新开始本关")
+
+    def enter_random_mode(self):
+        self.random_num = 0
+        self.load_random_level()
+        self.state = self.PLAYING
 
     # ---------- 棋盘逻辑 ----------
     def arrows_left(self):
@@ -438,7 +525,10 @@ class Game:
 
     # ---------- 关卡推进 ----------
     def advance_level(self):
-        if self.level_index < len(LEVELS) - 1:
+        if self.random_mode:                       # 随机模式：一直有下一关
+            self.load_random_level()
+            self.state = self.PLAYING
+        elif self.level_index < len(LEVELS) - 1:
             self.load_level(self.level_index + 1)
             self.state = self.PLAYING
         else:
@@ -466,8 +556,7 @@ class Game:
             elif e.key in (pygame.K_SPACE, pygame.K_RETURN):
                 self._activate()
             elif e.key == pygame.K_r and self.state == self.PLAYING:
-                self.load_level(self.level_index)
-                self.set_feedback("已重新开始本关")
+                self.restart_level()
             elif e.key == pygame.K_z and self.state == self.PLAYING:
                 self.undo()
             elif e.key == pygame.K_h and self.state == self.PLAYING:
@@ -489,7 +578,7 @@ class Game:
         elif self.state == self.LEVEL_CLEAR:
             self.advance_level()
         elif self.state == self.GAME_OVER:
-            self.load_level(self.level_index)
+            self.restart_level()
             self.state = self.PLAYING
         elif self.state == self.VICTORY:
             self.state = self.MENU
@@ -499,10 +588,11 @@ class Game:
             if self.menu_btn.clicked(mpos):
                 self.load_level(0)
                 self.state = self.PLAYING
+            elif self.random_btn.clicked(mpos):
+                self.enter_random_mode()
         elif self.state == self.PLAYING:
             if self.hud_restart.clicked(mpos):
-                self.load_level(self.level_index)
-                self.set_feedback("已重新开始本关")
+                self.restart_level()
             else:
                 cell = self.pixel_to_cell(*mpos)
                 if cell:
@@ -512,7 +602,7 @@ class Game:
                 self.advance_level()
         elif self.state == self.GAME_OVER:
             if self.retry_btn.clicked(mpos):
-                self.load_level(self.level_index)
+                self.restart_level()
                 self.state = self.PLAYING
             elif self.menu_return_btn.clicked(mpos):
                 self.state = self.MENU
@@ -523,6 +613,7 @@ class Game:
     # ---------- 更新 ----------
     def update(self, dt, mpos):
         self.menu_btn.update(mpos)
+        self.random_btn.update(mpos)
         self.next_btn.update(mpos)
         self.retry_btn.update(mpos)
         self.menu_return_btn.update(mpos)
@@ -560,10 +651,16 @@ class Game:
         else:  # PLAYING / LEVEL_CLEAR / GAME_OVER
             self.draw_play()
             if self.state == self.LEVEL_CLEAR:
-                last = self.level_index == len(LEVELS) - 1
-                self.draw_overlay("通关！", f"第 {self.level_index + 1} 关 · {LEVELS[self.level_index]['name']}",
-                                  "下一关" if not last else "完成全部", self.next_btn,
-                                  stars=self.stars)
+                if self.random_mode:
+                    sub = f"随机关卡 {self.random_num} · {self.current_level['name']}"
+                    self.draw_overlay("通关！", sub, "下一关", self.next_btn,
+                                      stars=self.stars)
+                else:
+                    last = self.level_index == len(LEVELS) - 1
+                    self.draw_overlay("通关！",
+                                      f"第 {self.level_index + 1} 关 · {self.current_level['name']}",
+                                      "下一关" if not last else "完成全部", self.next_btn,
+                                      stars=self.stars)
             elif self.state == self.GAME_OVER:
                 self.draw_overlay("挑战失败", "剩余失误次数已耗尽，再来一次！",
                                   "重新开始", self.retry_btn, bad=True,
@@ -581,6 +678,7 @@ class Game:
             cy = 340 + int(8 * math.sin(self.title_t * 2 + i))
             self.draw_arrow(cx, cy, d, C_ARROW, scale=1.15)
         self.menu_btn.draw(self.screen)
+        self.random_btn.draw(self.screen)
         foot = font(16).render("软件工程第二次个人作业 · 学号 102401129 · 空格/回车 开始",
                                True, C_DIM)
         self.screen.blit(foot, foot.get_rect(center=(WIN_W // 2, WIN_H - 40)))
@@ -597,9 +695,12 @@ class Game:
         bar = pygame.Rect(0, 0, WIN_W, 100)
         pygame.draw.rect(self.screen, C_PANEL, bar)
         pygame.draw.line(self.screen, C_CELL_LINE, (0, 100), (WIN_W, 100), 2)
-        lvl = LEVELS[self.level_index]
-        t1 = font(26, True).render(f"第 {self.level_index + 1}/{len(LEVELS)} 关 · {lvl['name']}",
-                                  True, C_TEXT)
+        lvl = self.current_level
+        if self.random_mode:
+            label = f"随机关卡 {self.random_num} · {lvl['name']}"
+        else:
+            label = f"第 {self.level_index + 1}/{len(LEVELS)} 关 · {lvl['name']}"
+        t1 = font(26, True).render(label, True, C_TEXT)
         self.screen.blit(t1, (30, 20))
         t2 = font(22).render(f"剩余箭头：{self.arrows_left()}", True, C_DIM)
         self.screen.blit(t2, (30, 58))

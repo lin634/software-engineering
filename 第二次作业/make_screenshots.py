@@ -82,4 +82,9 @@ g.state = Game.VICTORY
 g.draw()
 shot("07_victory.png")
 
+# 8) 随机模式（每关箭头随机分布）
+g.enter_random_mode()
+g.draw()
+shot("08_random_mode.png")
+
 print("done")

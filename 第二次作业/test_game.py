@@ -19,7 +19,8 @@ import pygame
 pygame.init()
 pygame.display.set_mode((960, 720))
 
-from arrow_game import Game, Arrow, LEVELS
+from arrow_game import Game, Arrow, LEVELS, generate_random_level, random_level_spec
+from verify_levels import solve
 
 
 def setup(game, grid, mistakes=3):
@@ -108,6 +109,21 @@ def run():
     mid_ok = g.mistakes == LEVELS[1]["mistakes"] - 1 and g.board[1][1] is not None
     g.load_level(1)               # 模拟按 R 重新开始
     check("T06", mid_ok and dirs(g) == init and g.mistakes == LEVELS[1]["mistakes"])
+
+    # ---- T07（附加）随机模式：生成关卡均保证可通关 ----
+    print("T07 随机模式：随机分布且保证可通关")
+    random_ok = True
+    for i in range(40):
+        rows, cols, n, m = random_level_spec(1 + i % 12)
+        grid = None
+        for _ in range(100):
+            grid = generate_random_level(rows, cols, n)
+            if grid:
+                break
+        if grid is None or not solve({"grid": grid, "mistakes": m})[0]:
+            random_ok = False
+            print(f"  随机生成失败或不可通关: {rows}x{cols} n={n}")
+    check("T07", random_ok)
 
     print(f"\n结果：{passed} 通过，{failed} 失败")
     return 0 if failed == 0 else 1
