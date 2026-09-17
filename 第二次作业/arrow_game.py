@@ -521,6 +521,7 @@ class Game:
         self.auto_solving = False  # AI 自动求解中
         self.auto_steps = []       # 待执行的消除顺序 [(r, c), ...]
         self.auto_timer = 0.0      # 到下一次自动点击的倒计时
+        self.pending_clear = False  # 最后一支箭是否正在飞出（飞完才进通关画面）
         # 棋盘居中
         gw = self.cols * CELL
         gh = self.rows * CELL
@@ -645,6 +646,8 @@ class Game:
             self.history.pop(0)
 
     def undo(self):
+        if self.pending_clear:
+            self.pending_clear = False   # 撤销已射出的最后一支箭，取消待通关
         if not self.history:
             self.set_feedback("没有可撤销的操作")
             return
@@ -677,7 +680,7 @@ class Game:
             if self.arrows_left() == 0:
                 used = self.mistakes_max - self.mistakes
                 self.stars = 3 if used == 0 else (2 if used <= self.mistakes_max / 2 else 1)
-                self.state = self.LEVEL_CLEAR
+                self.pending_clear = True   # 等最后一支箭完全飞出再进通关画面
                 self.stop_auto_solve()
         else:
             # 前方阻挡 —— 碰撞
@@ -782,6 +785,8 @@ class Game:
             elif self.random_btn.clicked(mpos):
                 self.enter_random_mode()
         elif self.state == self.PLAYING:
+            if self.pending_clear:
+                return          # 最后一支箭正在飞出，动画期间忽略点击
             if self.btn_undo.clicked(mpos):
                 self.stop_auto_solve()
                 self.undo()
@@ -854,6 +859,10 @@ class Game:
             p.x += dc * 900 * dt
             p.y += dr * 900 * dt
         self.projectiles = [p for p in self.projectiles if p.t < p.life]
+        # 最后一支箭完全飞出屏幕后再进入通关画面
+        if self.pending_clear and not self.projectiles:
+            self.pending_clear = False
+            self.state = self.LEVEL_CLEAR
         # AI 自动求解：按拓扑序逐步点击
         if self.auto_solving and self.state == self.PLAYING and self.auto_steps:
             self.auto_timer -= dt

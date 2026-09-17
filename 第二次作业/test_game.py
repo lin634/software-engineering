@@ -35,6 +35,7 @@ def setup(game, grid, mistakes=3):
     game.projectiles = []
     game.history = []
     game.state = Game.PLAYING
+    game.pending_clear = False
     gw = game.cols * 76
     gh = game.rows * 76
     game.grid_x = (960 - gw) // 2
@@ -90,7 +91,10 @@ def run():
     setup(g, ["R...", "...L"])   # (0,0)R 与 (1,3)L 都畅通
     g.click_cell(0, 0)
     g.click_cell(1, 3)
-    cleared = g.arrows_left() == 0 and g.state == Game.LEVEL_CLEAR
+    # 最后一支箭点掉后：不立即通关，先等它飞出动画结束
+    waiting = g.arrows_left() == 0 and g.state == Game.PLAYING and g.pending_clear
+    g.update(1.0, (0, 0))        # 模拟动画播完（0.8s）-> 进入通关画面
+    cleared = waiting and g.state == Game.LEVEL_CLEAR and not g.projectiles
     g.advance_level()
     check("T04", cleared and g.level_index == 1 and g.state == Game.PLAYING)
 
@@ -136,6 +140,7 @@ def run():
     for (r, c) in order:                  # 按求解顺序逐一点击
         if g.board[r][c] is not None:
             g.click_cell(r, c)
+    g.update(1.0, (0, 0))                 # 等最后一支箭飞完 -> 通关画面
     check("T08", order_ok and g.arrows_left() == 0 and g.state == Game.LEVEL_CLEAR)
 
     print(f"\n结果：{passed} 通过，{failed} 失败")
