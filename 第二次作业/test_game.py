@@ -8,6 +8,7 @@
   T04 消除本关全部箭头 -> 通关并进入下一关
   T05 失误次数耗尽 -> 失败，且可重新开始
   T06 游戏进行中重新开始 -> 布局与失误次数恢复
+附加 T07–T09：随机关可通关、AI 求解、星级计分规则
 
 运行： python test_game.py
 """
@@ -19,7 +20,8 @@ import pygame
 pygame.init()
 pygame.display.set_mode((960, 720))
 
-from arrow_game import Game, Arrow, LEVELS, generate_random_level, random_level_spec
+from arrow_game import (Game, Arrow, LEVELS, CELL, WIN_W, WIN_H,
+                        generate_random_level, random_level_spec)
 from verify_levels import solve
 
 
@@ -36,10 +38,17 @@ def setup(game, grid, mistakes=3):
     game.history = []
     game.state = Game.PLAYING
     game.pending_clear = False
-    gw = game.cols * 76
-    gh = game.rows * 76
-    game.grid_x = (960 - gw) // 2
-    game.grid_y = 120 + (720 - 120 - 40 - gh) // 2
+    # 星级计分相关状态一并重置，保证各用例互相独立
+    game.undos_left = 1
+    game.hints_left = 1
+    game.used_undos = False
+    game.used_hints = False
+    game.used_ai = False
+    game.stars = 0
+    gw = game.cols * CELL
+    gh = game.rows * CELL
+    game.grid_x = (WIN_W - gw) // 2
+    game.grid_y = 120 + (WIN_H - 120 - 80 - gh) // 2
 
 
 def dirs(game):
@@ -142,6 +151,94 @@ def run():
             g.click_cell(r, c)
     g.update(1.0, (0, 0))                 # 等最后一支箭飞完 -> 通关画面
     check("T08", order_ok and g.arrows_left() == 0 and g.state == Game.LEVEL_CLEAR)
+
+    # ---- T09（附加）星级规则 ----
+    print("T09 星级规则：满 3 星；撤销/提示各 1 次扣 1 星；AI 只给 1 星；失误上限统一 3")
+
+    def clear_all(game):
+        """按依赖顺序点掉剩余全部箭头，直到触发通关。"""
+        for _ in range(100):
+            hit = False
+            for r in range(game.rows):
+                for c in range(game.cols):
+                    a = game.board[r][c]
+                    if a and game.is_clear(r, c, a.d):
+                        game.click_cell(r, c)
+                        hit = True
+                        break
+                if hit:
+                    break
+            if not hit:
+                return
+
+    def fresh():
+        g.load_level(0)
+        g.state = Game.PLAYING
+        g.total_stars = 0
+
+    # 1) 不用任何辅助 -> 3 星
+    fresh()
+    clear_all(g)
+    c1 = g.stars == 3 and g.total_stars == 3
+
+    # 2) 用了 1 次撤销 -> 2 星；第 2 次撤销被拒绝且棋盘不变
+    fresh()
+    g.click_cell(2, 0)          # 飞出 -> 压栈
+    g.undo()                    # 撤销 -> 机会归零，棋盘恢复
+    restored = g.board[2][0] is not None and g.undos_left == 0
+    g.click_cell(2, 0)          # 再射一次，让撤销栈非空
+    before = dirs(g)
+    g.undo()                    # 机会已用完：必须拒绝
+    refused = g.undos_left == 0 and dirs(g) == before
+    clear_all(g)
+    c2 = restored and refused and g.stars == 2
+
+    # 3) 用了 1 次提示 -> 2 星；第 2 次提示被拒绝
+    fresh()
+    g.use_hint()
+    once_hint = g.hints_left == 0 and g.used_hints
+    g.use_hint()
+    clear_all(g)
+    c3 = once_hint and g.hints_left == 0 and g.stars == 2
+
+    # 4) 撤销 + 提示都用 -> 1 星
+    fresh()
+    g.click_cell(2, 0)
+    g.undo()
+    g.use_hint()
+    clear_all(g)
+    c4 = g.stars == 1
+
+    # 5) 用 AI 自动求解 -> 只给 1 星
+    fresh()
+    g.start_auto_solve()
+    ai_on = g.used_ai and g.auto_solving
+    g.stop_auto_solve()
+    clear_all(g)
+    c5 = ai_on and g.stars == 1
+
+    # 6) AI 与撤销叠加 -> 仍只给 1 星（不叠加为负）
+    fresh()
+    g.click_cell(2, 0)
+    g.undo()
+    g.use_hint()
+    g.start_auto_solve()
+    g.stop_auto_solve()
+    clear_all(g)
+    c6 = g.calc_stars() == 1 and g.stars == 1
+
+    # 7) 失误上限统一为 3（8 关固定 + 随机模式各档）
+    c7 = all(lv["mistakes"] == 3 for lv in LEVELS) and all(
+        random_level_spec(1 + i)[3] == 3 for i in range(12))
+
+    # 8) 重开本关要退回已计入的星数，避免重复计分
+    fresh()
+    clear_all(g)
+    acc = g.total_stars
+    g.restart_level()
+    c8 = acc == 3 and g.total_stars == 0 and g.arrows_left() == 4
+
+    check("T09", c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8)
 
     print(f"\n结果：{passed} 通过，{failed} 失败")
     return 0 if failed == 0 else 1

@@ -77,7 +77,7 @@ LEVELS = [
     },
     {
         "name": "小试锋芒",
-        "mistakes": 4,
+        "mistakes": 3,
         "grid": [
             ".L..U.",
             "...R..",
@@ -89,7 +89,7 @@ LEVELS = [
     },
     {
         "name": "渐入佳境",
-        "mistakes": 4,
+        "mistakes": 3,
         "grid": [
             "..DR.U",
             ".L....",
@@ -101,7 +101,7 @@ LEVELS = [
     },
     {
         "name": "左右逢源",
-        "mistakes": 5,
+        "mistakes": 3,
         "grid": [
             ".L.....",
             "R...U..",
@@ -114,7 +114,7 @@ LEVELS = [
     },
     {
         "name": "密阵初现",
-        "mistakes": 6,
+        "mistakes": 3,
         "grid": [
             "..U...U",
             "...L...",
@@ -127,7 +127,7 @@ LEVELS = [
     },
     {
         "name": "迷雾重重",
-        "mistakes": 7,
+        "mistakes": 3,
         "grid": [
             "...U...U",
             "R..R....",
@@ -141,7 +141,7 @@ LEVELS = [
     },
     {
         "name": "箭雨滂沱",
-        "mistakes": 8,
+        "mistakes": 3,
         "grid": [
             "L.R.....",
             ".....D.L",
@@ -155,7 +155,7 @@ LEVELS = [
     },
     {
         "name": "万箭归宗",
-        "mistakes": 9,
+        "mistakes": 3,
         "grid": [
             "DU..U..L",
             "....UR..",
@@ -295,7 +295,7 @@ def random_level_spec(level_num):
     size = min(8, 5 + (level_num - 1) // 3)           # 5 -> 6 -> 7 -> 8
     cells = size * size
     n_arrows = min(int(cells * 0.42), 2 + 2 * level_num)  # 4, 6, 8, 10, ...
-    mistakes = max(3, n_arrows // 3)
+    mistakes = 3
     return size, size, n_arrows, mistakes
 
 
@@ -494,6 +494,7 @@ class Game:
         self.title_t = 0.0
         self.hint_t = 0.0
         self.stars = 0
+        self.total_stars = 0        # 本局累计星数（固定 8 关满分 24）
         self.load_level(0)
 
     # ---------- 背景与关卡 ----------
@@ -522,6 +523,13 @@ class Game:
         self.auto_steps = []       # 待执行的消除顺序 [(r, c), ...]
         self.auto_timer = 0.0      # 到下一次自动点击的倒计时
         self.pending_clear = False  # 最后一支箭是否正在飞出（飞完才进通关画面）
+        # 星级计分：满分 3 星；撤销 / 提示各只有 1 次机会，用一次扣 1 星；AI 求解只给 1 星
+        self.undos_left = 1
+        self.hints_left = 1
+        self.used_undos = False
+        self.used_hints = False
+        self.used_ai = False
+        self.stars = 0
         # 棋盘居中
         gw = self.cols * CELL
         gh = self.rows * CELL
@@ -552,12 +560,20 @@ class Game:
 
     def restart_level(self):
         """重新开始当前关卡（随机模式也恢复为同一布局）。"""
+        self.total_stars -= self.stars   # 本关已计入的星数要退回，避免重复计分
         self._load_dict(self.current_level)
         self.set_feedback("已重新开始本关")
 
     def enter_random_mode(self):
         self.random_num = 0
+        self.total_stars = 0
         self.load_random_level()
+        self.state = self.PLAYING
+
+    def start_game(self):
+        """从菜单开始一局固定关卡的新游戏，总分清零。"""
+        self.total_stars = 0
+        self.load_level(0)
         self.state = self.PLAYING
 
     # ---------- 棋盘逻辑 ----------
@@ -628,10 +644,11 @@ class Game:
         if not order:
             self.set_feedback("当前局面无法自动求解")
             return
+        self.used_ai = True             # 用过 AI：本关最多 1 星
         self.auto_solving = True
         self.auto_steps = order
         self.auto_timer = 0.3
-        self.set_feedback("AI 求解中…（再按 S 停止）", 2.0)
+        self.set_feedback("AI 求解中…本关只算 1 星（再按 S 停止）", 2.0)
 
     def stop_auto_solve(self):
         self.auto_solving = False
@@ -651,11 +668,35 @@ class Game:
         if not self.history:
             self.set_feedback("没有可撤销的操作")
             return
+        if self.undos_left <= 0:
+            self.set_feedback("本关撤销机会已用完")
+            return
+        self.undos_left -= 1
+        self.used_undos = True           # 用过撤销：本关最多 2 星
         snap, m = self.history.pop()
         self.board = snap
         self.mistakes = m
         self.hint_t = 0.0
-        self.set_feedback("已撤销上一步")
+        self.set_feedback("已撤销上一步（-1 星）")
+
+    def use_hint(self):
+        """高亮当前可射出的箭头。本关只有 1 次提示机会，用一次扣 1 星。"""
+        if self.hints_left <= 0:
+            self.set_feedback("本关提示机会已用完")
+            return
+        self.hints_left -= 1
+        self.used_hints = True           # 用过提示：本关最多 2 星
+        self.hint_t = 2.2
+        n = sum(1 for r in range(self.rows) for c in range(self.cols)
+                if self.board[r][c] and self.is_clear(r, c, self.board[r][c].d))
+        self.set_feedback(f"提示：当前有 {n} 支箭头可射出（-1 星）")
+
+    # ---------- 星级计分 ----------
+    def calc_stars(self):
+        """本关星数：满 3 星；撤销 / 提示各用一次扣 1 星；用 AI 求解只给 1 星。"""
+        if self.used_ai:
+            return 1
+        return 3 - int(self.used_undos) - int(self.used_hints)
 
     # ---------- 反馈 ----------
     def set_feedback(self, msg, t=1.4):
@@ -678,8 +719,8 @@ class Game:
             self.set_feedback("箭头飞出！")
             self.hint_t = 0.0
             if self.arrows_left() == 0:
-                used = self.mistakes_max - self.mistakes
-                self.stars = 3 if used == 0 else (2 if used <= self.mistakes_max / 2 else 1)
+                self.stars = self.calc_stars()
+                self.total_stars += self.stars
                 self.pending_clear = True   # 等最后一支箭完全飞出再进通关画面
                 self.stop_auto_solve()
         else:
@@ -748,10 +789,7 @@ class Game:
                 self.undo()
             elif e.key == pygame.K_h and self.state == self.PLAYING:
                 self.stop_auto_solve()
-                self.hint_t = 2.2
-                n = sum(1 for r in range(self.rows) for c in range(self.cols)
-                        if self.board[r][c] and self.is_clear(r, c, self.board[r][c].d))
-                self.set_feedback(f"提示：当前有 {n} 支箭头可射出")
+                self.use_hint()
             elif e.key == pygame.K_s and self.state == self.PLAYING:
                 if self.auto_solving:
                     self.stop_auto_solve()
@@ -767,8 +805,7 @@ class Game:
     def _activate(self):
         """空格/回车在不同状态下的通用动作。"""
         if self.state == self.MENU:
-            self.load_level(0)
-            self.state = self.PLAYING
+            self.start_game()
         elif self.state == self.LEVEL_CLEAR:
             self.advance_level()
         elif self.state == self.GAME_OVER:
@@ -780,8 +817,7 @@ class Game:
     def _click_mouse(self, mpos):
         if self.state == self.MENU:
             if self.menu_btn.clicked(mpos):
-                self.load_level(0)
-                self.state = self.PLAYING
+                self.start_game()
             elif self.random_btn.clicked(mpos):
                 self.enter_random_mode()
         elif self.state == self.PLAYING:
@@ -792,10 +828,7 @@ class Game:
                 self.undo()
             elif self.btn_hint.clicked(mpos):
                 self.stop_auto_solve()
-                self.hint_t = 2.2
-                n = sum(1 for r in range(self.rows) for c in range(self.cols)
-                        if self.board[r][c] and self.is_clear(r, c, self.board[r][c].d))
-                self.set_feedback(f"提示：当前有 {n} 支箭头可射出")
+                self.use_hint()
             elif self.btn_solve.clicked(mpos):
                 if self.auto_solving:
                     self.stop_auto_solve()
@@ -884,14 +917,17 @@ class Game:
         else:  # PLAYING / LEVEL_CLEAR / GAME_OVER
             self.draw_play()
             if self.state == self.LEVEL_CLEAR:
+                tag = " · AI 求解 · 1 星" if self.used_ai else f" · 本关 {self.stars} 星"
                 if self.random_mode:
-                    sub = f"随机关卡 {self.random_num} · {self.current_level['name']}"
+                    sub = (f"随机关卡 {self.random_num} · {self.current_level['name']}"
+                           f"{tag}")
                     self.draw_overlay("通关！", sub, "下一关", self.next_btn,
                                       stars=self.stars)
                 else:
                     last = self.level_index == len(LEVELS) - 1
-                    self.draw_overlay("通关！",
-                                      f"第 {self.level_index + 1} 关 · {self.current_level['name']}",
+                    sub = (f"第 {self.level_index + 1} 关 · {self.current_level['name']}"
+                           f"{tag}")
+                    self.draw_overlay("通关！", sub,
                                       "下一关" if not last else "完成全部", self.next_btn,
                                       stars=self.stars)
             elif self.state == self.GAME_OVER:
@@ -920,7 +956,9 @@ class Game:
         self.draw_hud()
         self.draw_grid()
         self.draw_projectiles()
-        # 底部操作按钮栏
+        # 底部操作按钮栏（撤销 / 提示把剩余次数直接标在按钮上）
+        self.btn_undo.text = f"撤销×{self.undos_left}"
+        self.btn_hint.text = f"提示×{self.hints_left}"
         for b in self.action_buttons:
             b.draw(self.screen)
         tip = "点击箭头尝试射出，或用下方按钮操作"
@@ -951,6 +989,17 @@ class Game:
             pygame.draw.circle(self.screen, C_CELL_LINE, (px, py), 8, 1)
         remain = font(16).render(f"{self.mistakes}/{self.mistakes_max}", True, C_DIM)
         self.screen.blit(remain, (300 + 64 + self.mistakes_max * 24 + 6, 64))
+        # 撤销 / 提示剩余次数
+        t3 = font(20).render(
+            f"撤销×{self.undos_left}    提示×{self.hints_left}", True, C_DIM)
+        self.screen.blit(t3, (560, 58))
+        # 累计星数（固定 8 关满分 24）
+        if self.random_mode:
+            t4 = font(20).render(f"累计 {self.total_stars} 星", True, C_ACCENT)
+        else:
+            t4 = font(20).render(f"总星 {self.total_stars} / {len(LEVELS) * 3}",
+                                 True, C_ACCENT)
+        self.screen.blit(t4, t4.get_rect(midright=(WIN_W - 30, 34)))
 
     def draw_grid(self):
         pad = 14
@@ -1039,15 +1088,27 @@ class Game:
         self.screen.blit(t, t.get_rect(center=(WIN_W // 2, WIN_H // 2 - 60)))
         s = font(24).render("你成功射出了所有关卡的全部箭头！", True, C_TEXT)
         self.screen.blit(s, s.get_rect(center=(WIN_W // 2, WIN_H // 2)))
+        # 星级统计：撤销 / 提示各用一次扣 1 星，AI 求解只给 1 星
+        t2 = font(34, True).render(
+            f"总星数：{self.total_stars} / {len(LEVELS) * 3}", True, C_ACCENT)
+        self.screen.blit(t2, t2.get_rect(center=(WIN_W // 2, WIN_H // 2 + 48)))
         self.menu_return_btn.text = "返回菜单"
         self.menu_return_btn.draw(self.screen)
 
     def draw_feedback(self):
-        if self.feedback_t > 0 and self.feedback:
-            alpha = 1.0 if self.feedback_t > 0.3 else max(0.0, self.feedback_t / 0.3)
-            t = font(24, True).render(self.feedback, True, C_ACCENT)
-            t.set_alpha(int(255 * alpha))
-            self.screen.blit(t, t.get_rect(midbottom=(WIN_W // 2, WIN_H - 34)))
+        """底部按钮栏上方的半透明提示气泡，避免文字压住可点击按钮。"""
+        if self.feedback_t <= 0 or not self.feedback:
+            return
+        alpha = 1.0 if self.feedback_t > 0.3 else max(0.0, self.feedback_t / 0.3)
+        a = int(255 * alpha)
+        t = font(20, True).render(self.feedback, True, C_ACCENT)
+        t.set_alpha(a)
+        pill = t.get_rect(center=(WIN_W // 2, WIN_H - 84)).inflate(32, 18)
+        bg = pygame.Surface((pill.w, pill.h), pygame.SRCALPHA)
+        bg.fill((40, 46, 70, int(205 * alpha)))
+        pygame.draw.rect(bg, (*C_CELL_LINE, a), bg.get_rect(), 2, border_radius=18)
+        self.screen.blit(bg, pill)
+        self.screen.blit(t, t.get_rect(center=pill.center))
 
 
 # ============================== 入口 ==============================

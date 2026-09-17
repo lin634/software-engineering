@@ -15,6 +15,9 @@ screen = pygame.display.set_mode((960, 720))
 
 from arrow_game import Game
 
+# 截图输出固定落在本脚本所在目录，与运行时的工作目录无关
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 OUT = "screenshots"
 os.makedirs(OUT, exist_ok=True)
 
@@ -52,6 +55,28 @@ def find_blocked(game):
     return None
 
 
+def quiet(game):
+    """清掉残留的提示气泡，让静态截图更干净。"""
+    game.feedback = ""
+    game.feedback_t = 0.0
+
+
+def clear_level(game, per_shot=0.25):
+    """按可飞顺序清空当前关卡，直到弹出通关画面。
+
+    最后一支箭要等飞出动画（0.8s）播完才进通关画面，所以末尾多刷 1 秒。
+    """
+    guard = 0
+    while game.state == Game.PLAYING and game.arrows_left() > 0 and guard < 100:
+        guard += 1
+        cell = find_clearable(game)
+        if cell is None:
+            break
+        game.click_cell(*cell)
+        flush(game, per_shot)
+    flush(game, 1.0)
+
+
 g = Game(screen)
 
 # 1) 开始界面
@@ -62,13 +87,14 @@ shot("01_menu.png")
 # 2) 游戏界面（第 5 关）
 g.load_level(4)
 g.state = Game.PLAYING
+quiet(g)
 g.draw()
 shot("02_play_level1.png")
 
-# 3) 提示功能（同关，高亮可射出箭头）
+# 3) 提示功能（同关，高亮可射出箭头，本关提示机会只剩 0 次）
 g.load_level(4)
 g.state = Game.PLAYING
-g.hint_t = 2.2
+g.use_hint()
 g.draw()
 shot("03_hint.png")
 
@@ -83,37 +109,53 @@ g.draw()
 shot("04_arrow_flyout.png")
 flush(g, 0.8)
 
-# 5) 通关界面（按可飞顺序清空第 1 关全部箭头）
-guard = 0
-while g.arrows_left() > 0 and g.state == Game.PLAYING and guard < 100:
-    guard += 1
-    cell = find_clearable(g)
-    if cell is None:
-        break
-    g.click_cell(*cell)
-    flush(g, 0.25)
-flush(g, 0.3)
+# 5) 通关界面（不借助任何辅助：满 3 星）
+clear_level(g)
+quiet(g)
 g.draw()
 shot("05_level_clear.png")
 
-# 6) 失败界面（第 5 关，强行耗尽失误）
+# 6) 失败界面（第 5 关，连点同一支被阻挡的箭头耗尽 3 次失误）
 g.load_level(4)
 g.state = Game.PLAYING
-g.mistakes = 1        # 只剩 1 次，再失误即失败
 cell = find_blocked(g)
 assert cell, "第 5 关应存在被阻挡的箭头"
-g.click_cell(*cell)   # 被阻挡 -> GAME_OVER
+for _ in range(g.mistakes_max):
+    g.click_cell(*cell)          # 每次 -1 失误，耗尽即 GAME_OVER
+assert g.state == Game.GAME_OVER, "3 次失误后应进入失败界面"
+quiet(g)
 g.draw()
 shot("06_game_over.png")
 
-# 7) 全部通关界面
+# 7) 全部通关界面（真实连打 8 关，累计 24 星）
+g.total_stars = 0
+for i in range(8):
+    g.load_level(i)
+    g.state = Game.PLAYING
+    clear_level(g, 0.12)
+    assert g.state == Game.LEVEL_CLEAR, f"第 {i + 1} 关未能通关"
+    g.advance_level()
 g.state = Game.VICTORY
+quiet(g)
 g.draw()
 shot("07_victory.png")
 
 # 8) 随机模式（每关箭头随机分布）
 g.enter_random_mode()
+quiet(g)
 g.draw()
 shot("08_random_mode.png")
+
+# 9) 用过一次撤销：本关只评 2 星
+g.load_level(0)
+g.state = Game.PLAYING
+cell = find_clearable(g)
+g.click_cell(*cell)              # 先射出一支
+g.undo()                         # 撤销（-1 星，机会归零）
+clear_level(g)
+assert g.stars == 2, "用过撤销应为 2 星"
+quiet(g)
+g.draw()
+shot("09_clear_2stars.png")
 
 print("done")
