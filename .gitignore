@@ -12,3 +12,8 @@ lsh_web/
 build/
 dist/
 *.spec
+发布/
+
+# 本地工具与工作区（imgupload/config.json 内含博客园明文令牌，绝不可提交）
+imgupload/
+.workbuddy/

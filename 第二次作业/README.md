@@ -59,6 +59,8 @@
 ├── gen_new_levels.py     # 关卡生成脚本：按规格批量生成并验证可通关的新关卡
 ├── build_exe.py          # 打包脚本：用 PyInstaller 生成 dist/一箭又一箭.exe
 ├── make_screenshots.py   # 自动生成界面截图（headless）
+├── upload_screenshots.py # 把截图上传到博客园，并把本文件与博文里的图片链接改写成博客园地址
+├── screenshots_cnblogs.json # 截图文件名 → 博客园图片地址映射（幂等缓存，重跑不重复上传）
 ├── requirements.txt      # 依赖列表
 ├── README.md             # 本文件
 ├── 软件工程第二次个人作业.md  # 博客园博文
@@ -92,7 +94,12 @@ python arrow_game.py
 > python test_game.py          # 10 项逻辑测试（含随机模式、AI 求解、星级规则与选关菜单）
 > python verify_levels.py      # 验证 20 个关卡均可通关
 > python make_screenshots.py   # 重新生成 README / 博文中的界面截图
+> python upload_screenshots.py # 把截图上传到博客园并改写本文档与博文里的图片链接
 > ```
+
+> 本文档与博文里的截图**不引用仓库内的本地路径**，而是托管在博客园图片空间（`img2024.cnblogs.com`）：
+> 改完截图后跑一次 `upload_screenshots.py` 即可重新上传并替换全部链接，已上传过的会按
+> `screenshots_cnblogs.json` 的映射跳过，不会重复上传。
 
 ### 打包成可执行文件（可选）
 
@@ -129,40 +136,40 @@ python build_exe.py
 ## 游戏截图
 
 ### 开始界面
-![开始界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/01_menu.png)
+![开始界面](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917225046588-440721812.png)
 
 ### 游戏界面（第 5 关 · 密阵初现，15 支箭）
-![游戏界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/02_play_level1.png)
+![游戏界面](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917225140552-781582871.png)
 
 ### 提示功能（高亮可飞出箭头）
-![提示功能](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/03_hint.png)
+![提示功能](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230016941-123265417.png)
 
 ### 箭头飞出动画
-![箭头飞出](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/04_arrow_flyout.png)
+![箭头飞出](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230018726-1433504680.png)
 
 ### 通关界面
-![通关界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/05_level_clear.png)
+![通关界面](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230020227-1941219178.png)
 
 ### 失败界面
-![失败界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/06_game_over.png)
+![失败界面](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230021765-472157228.png)
 
 ### 全部通关
-![全部通关](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/07_victory.png)
+![全部通关](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230023176-783622522.png)
 
 ### 随机模式（箭头随机分布，难度递增）
-![随机模式](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/08_random_mode.png)
+![随机模式](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230024786-47579626.png)
 
 ### 星级示例：用过 1 次撤销 → 本关 2 星
-![用过撤销评 2 星](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/09_clear_2stars.png)
+![用过撤销评 2 星](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230026273-220343424.png)
 
 ### 星级示例：失误 2 次 → 本关 1 星（右上角实时显示「本关 ★☆☆」）
-![失误 2 次评 1 星](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/10_clear_1star_mistakes.png)
+![失误 2 次评 1 星](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230027927-987521918.png)
 
 ### 关卡选择二级菜单（全新开局，仅第 1 关解锁）
-![选关菜单](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/11_level_select.png)
+![选关菜单](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230029386-1397012932.png)
 
 ### 关卡选择二级菜单（已通关 7 关，显示解锁进度与历史星级）
-![选关菜单（已有进度）](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/12_level_select_progress.png)
+![选关菜单（已有进度）](https://img2024.cnblogs.com/blog/3847967/202609/3847967-20260917230030888-1101614763.png)
 
 ## 关卡说明
 
