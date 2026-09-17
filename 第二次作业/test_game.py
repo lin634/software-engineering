@@ -126,6 +126,18 @@ def run():
             print(f"  随机生成失败或不可通关: {rows}x{cols} n={n}")
     check("T07", random_ok)
 
+    # ---- T08（附加）AI 自动求解：拓扑序可清空当前关卡 ----
+    print("T08 AI 自动求解当前关卡")
+    g.load_level(3)                       # 任意固定关卡
+    g.state = Game.PLAYING
+    order = g._solve_order()
+    n0 = g.arrows_left()
+    order_ok = len(order) == n0
+    for (r, c) in order:                  # 按求解顺序逐一点击
+        if g.board[r][c] is not None:
+            g.click_cell(r, c)
+    check("T08", order_ok and g.arrows_left() == 0 and g.state == Game.LEVEL_CLEAR)
+
     print(f"\n结果：{passed} 通过，{failed} 失败")
     return 0 if failed == 0 else 1
 

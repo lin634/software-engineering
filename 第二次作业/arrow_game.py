@@ -17,6 +17,7 @@
   R         重新开始当前关卡
   Z         撤销上一步（附加功能）
   H         提示当前可射出的箭头（附加功能）
+  S         AI 自动求解当前关卡（附加功能）
   空格/回车 开始 / 下一关 / 重试
   ESC       返回菜单 / 退出
   F2        保存截图到 screenshots/
@@ -26,6 +27,8 @@ import sys
 import math
 import time
 import random
+import asyncio
+from collections import deque
 from dataclasses import dataclass, field
 
 import pygame
@@ -338,10 +341,19 @@ _FONT_PATH_BOLD = None
 
 def _resolve_fonts():
     global _FONT_PATH, _FONT_PATH_BOLD
+    # 优先使用随包分发的开源中文字体（网页版必需；桌面版若无则回退系统字体）
+    here = os.path.dirname(os.path.abspath(__file__))
+    bundled = [os.path.join(here, "fonts", "NotoSansSC-VF.ttf"),
+               os.path.join(here, "NotoSansSC-VF.ttf"),
+               "fonts/NotoSansSC-VF.ttf"]
+    for p in bundled:
+        if os.path.exists(p):
+            _FONT_PATH = p
+            _FONT_PATH_BOLD = p
+            return
     base = os.environ.get("WINDIR", r"C:\Windows") + r"\Fonts"
     cands_regular = [os.path.join(base, "msyh.ttc"),
-                     os.path.join(base, "simhei.ttf"),
-                     os.path.join(base, "NotoSansSC-VF.ttf")]
+                     os.path.join(base, "simhei.ttf")]
     cands_bold = [os.path.join(base, "msyhbd.ttc"),
                   os.path.join(base, "simhei.ttf")]
     for p in cands_regular:
@@ -364,6 +376,8 @@ def font(size, bold=False):
         path = _FONT_PATH_BOLD if (bold and _FONT_PATH_BOLD) else _FONT_PATH
         if path:
             f = pygame.font.Font(path, size)
+            if bold:
+                f.set_bold(True)           # 同一字体文件时用伪粗体
         else:                              # 极端回退：默认字体（可能不支持中文）
             f = pygame.font.Font(None, size)
             if bold:
@@ -491,6 +505,9 @@ class Game:
         self.feedback = ""
         self.feedback_t = 0.0
         self.hint_t = 0.0
+        self.auto_solving = False  # AI 自动求解中
+        self.auto_steps = []       # 待执行的消除顺序 [(r, c), ...]
+        self.auto_timer = 0.0      # 到下一次自动点击的倒计时
         # 棋盘居中
         gw = self.cols * CELL
         gh = self.rows * CELL
@@ -555,6 +572,57 @@ class Game:
             return None
         return (my - self.grid_y) // CELL, (mx - self.grid_x) // CELL
 
+    # ---------- AI 自动求解 ----------
+    def _solve_order(self):
+        """用依赖图拓扑排序求一条合法消除顺序 [(r, c), ...]。
+
+        规则：箭头 X 位于 Y 的前进射线上时，X 必须先于 Y 消除（边 X->Y）。
+        任一拓扑序都是合法消除序；返回空表示存在环（不可通关）。
+        """
+        arrows = {(r, c): self.board[r][c].d
+                  for r in range(self.rows) for c in range(self.cols)
+                  if self.board[r][c]}
+        adj = {p: [] for p in arrows}
+        indeg = {p: 0 for p in arrows}
+        for (r, c), d in arrows.items():
+            dr, dc = DIR_VEC[d]
+            nr, nc = r + dr, c + dc
+            while 0 <= nr < self.rows and 0 <= nc < self.cols:
+                if (nr, nc) in arrows:            # (nr,nc) 在 (r,c) 射线上 -> 先消除
+                    adj[(nr, nc)].append((r, c))
+                    indeg[(r, c)] += 1
+                nr += dr
+                nc += dc
+        q = deque(sorted(p for p in arrows if indeg[p] == 0))
+        order = []
+        while q:
+            p = q.popleft()
+            order.append(p)
+            nxt = []
+            for m in adj[p]:
+                indeg[m] -= 1
+                if indeg[m] == 0:
+                    nxt.append(m)
+            for m in sorted(nxt):
+                q.append(m)
+        return order if len(order) == len(arrows) else []
+
+    def start_auto_solve(self):
+        if self.state != self.PLAYING:
+            return
+        order = self._solve_order()
+        if not order:
+            self.set_feedback("当前局面无法自动求解")
+            return
+        self.auto_solving = True
+        self.auto_steps = order
+        self.auto_timer = 0.3
+        self.set_feedback("AI 求解中…（再按 S 停止）", 2.0)
+
+    def stop_auto_solve(self):
+        self.auto_solving = False
+        self.auto_steps = []
+
     # ---------- 历史/撤销 ----------
     def push_history(self):
         snap = ([[Arrow(a.d) if a else None for a in row] for row in self.board],
@@ -597,6 +665,7 @@ class Game:
                 used = self.mistakes_max - self.mistakes
                 self.stars = 3 if used == 0 else (2 if used <= self.mistakes_max / 2 else 1)
                 self.state = self.LEVEL_CLEAR
+                self.stop_auto_solve()
         else:
             # 前方阻挡 —— 碰撞
             self.push_history()
@@ -607,6 +676,7 @@ class Game:
             self.hint_t = 0.0
             if self.mistakes <= 0:
                 self.state = self.GAME_OVER
+                self.stop_auto_solve()
 
     # ---------- 关卡推进 ----------
     def advance_level(self):
@@ -621,9 +691,9 @@ class Game:
 
     # ---------- 截图 ----------
     def save_screenshot(self):
-        os.makedirs("screenshots", exist_ok=True)
         name = f"shot_{int(time.time())}.png"
         try:
+            os.makedirs("screenshots", exist_ok=True)
             pygame.image.save(self.screen, os.path.join("screenshots", name))
             self.set_feedback("已保存截图：screenshots/" + name, 1.6)
         except Exception as e:
@@ -641,14 +711,23 @@ class Game:
             elif e.key in (pygame.K_SPACE, pygame.K_RETURN):
                 self._activate()
             elif e.key == pygame.K_r and self.state == self.PLAYING:
+                self.stop_auto_solve()
                 self.restart_level()
             elif e.key == pygame.K_z and self.state == self.PLAYING:
+                self.stop_auto_solve()
                 self.undo()
             elif e.key == pygame.K_h and self.state == self.PLAYING:
+                self.stop_auto_solve()
                 self.hint_t = 2.2
                 n = sum(1 for r in range(self.rows) for c in range(self.cols)
                         if self.board[r][c] and self.is_clear(r, c, self.board[r][c].d))
                 self.set_feedback(f"提示：当前有 {n} 支箭头可射出")
+            elif e.key == pygame.K_s and self.state == self.PLAYING:
+                if self.auto_solving:
+                    self.stop_auto_solve()
+                    self.set_feedback("已停止 AI 求解")
+                else:
+                    self.start_auto_solve()
             elif e.key == pygame.K_F2:
                 self.save_screenshot()
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
@@ -677,10 +756,12 @@ class Game:
                 self.enter_random_mode()
         elif self.state == self.PLAYING:
             if self.hud_restart.clicked(mpos):
+                self.stop_auto_solve()
                 self.restart_level()
             else:
                 cell = self.pixel_to_cell(*mpos)
                 if cell:
+                    self.stop_auto_solve()       # 玩家手动操作，接管控制
                     self.click_cell(*cell)
         elif self.state == self.LEVEL_CLEAR:
             if self.next_btn.clicked(mpos):
@@ -725,6 +806,16 @@ class Game:
             p.x += dc * 900 * dt
             p.y += dr * 900 * dt
         self.projectiles = [p for p in self.projectiles if p.t < p.life]
+        # AI 自动求解：按拓扑序逐步点击
+        if self.auto_solving and self.state == self.PLAYING and self.auto_steps:
+            self.auto_timer -= dt
+            if self.auto_timer <= 0:
+                r, c = self.auto_steps.pop(0)
+                if self.board[r][c] is not None:        # 理论上必为可飞出
+                    self.click_cell(r, c)
+                self.auto_timer = 0.32
+                if not self.auto_steps:
+                    self.auto_solving = False
 
     # ---------- 绘制 ----------
     def draw(self):
@@ -772,7 +863,7 @@ class Game:
         self.draw_hud()
         self.draw_grid()
         self.draw_projectiles()
-        hint_txt = "鼠标点击箭头尝试射出  ·  R 重新开始  ·  Z 撤销  ·  H 提示  ·  ESC 菜单  ·  F2 截图"
+        hint_txt = "鼠标点击箭头尝试射出  ·  R 重新开始  ·  Z 撤销  ·  H 提示  ·  S AI求解  ·  ESC 菜单  ·  F2 截图"
         t = font(16).render(hint_txt, True, C_DIM)
         self.screen.blit(t, t.get_rect(midbottom=(WIN_W // 2, WIN_H - 8)))
 
@@ -901,7 +992,7 @@ class Game:
 
 
 # ============================== 入口 ==============================
-def main():
+async def main():
     pygame.init()
     pygame.display.set_caption("一箭又一箭")
     screen = pygame.display.set_mode((WIN_W, WIN_H))
@@ -917,9 +1008,8 @@ def main():
         game.update(dt, mpos)
         game.draw()
         pygame.display.flip()
-    pygame.quit()
-    sys.exit(0)
+        await asyncio.sleep(0)          # 让出事件循环（桌面与网页版通用）
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
