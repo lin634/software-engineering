@@ -129,40 +129,40 @@ python build_exe.py
 ## 游戏截图
 
 ### 开始界面
-![开始界面](screenshots/01_menu.png)
+![开始界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/01_menu.png)
 
 ### 游戏界面（第 5 关 · 密阵初现，15 支箭）
-![游戏界面](screenshots/02_play_level1.png)
+![游戏界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/02_play_level1.png)
 
 ### 提示功能（高亮可飞出箭头）
-![提示功能](screenshots/03_hint.png)
+![提示功能](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/03_hint.png)
 
 ### 箭头飞出动画
-![箭头飞出](screenshots/04_arrow_flyout.png)
+![箭头飞出](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/04_arrow_flyout.png)
 
 ### 通关界面
-![通关界面](screenshots/05_level_clear.png)
+![通关界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/05_level_clear.png)
 
 ### 失败界面
-![失败界面](screenshots/06_game_over.png)
+![失败界面](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/06_game_over.png)
 
 ### 全部通关
-![全部通关](screenshots/07_victory.png)
+![全部通关](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/07_victory.png)
 
 ### 随机模式（箭头随机分布，难度递增）
-![随机模式](screenshots/08_random_mode.png)
+![随机模式](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/08_random_mode.png)
 
 ### 星级示例：用过 1 次撤销 → 本关 2 星
-![用过撤销评 2 星](screenshots/09_clear_2stars.png)
+![用过撤销评 2 星](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/09_clear_2stars.png)
 
 ### 星级示例：失误 2 次 → 本关 1 星（右上角实时显示「本关 ★☆☆」）
-![失误 2 次评 1 星](screenshots/10_clear_1star_mistakes.png)
+![失误 2 次评 1 星](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/10_clear_1star_mistakes.png)
 
 ### 关卡选择二级菜单（全新开局，仅第 1 关解锁）
-![选关菜单](screenshots/11_level_select.png)
+![选关菜单](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/11_level_select.png)
 
 ### 关卡选择二级菜单（已通关 7 关，显示解锁进度与历史星级）
-![选关菜单（已有进度）](screenshots/12_level_select_progress.png)
+![选关菜单（已有进度）](https://raw.githubusercontent.com/lin634/software-engineering/master/%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BD%9C%E4%B8%9A/screenshots/12_level_select_progress.png)
 
 ## 关卡说明
 
