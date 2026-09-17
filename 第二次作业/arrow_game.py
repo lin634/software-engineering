@@ -9,6 +9,8 @@
     · 没有阻挡 —— 箭头飞出棋盘并消失；
     · 有阻挡   —— 箭头不能消失，发生碰撞并消耗 1 次失误机会。
   清空本关全部箭头即过关；失误次数耗尽则失败。
+  星级评价：每关满分 3 星，失误 / 撤销 / 提示每用一次扣 1 星；
+  使用 AI 自动求解只给 1 星。
   主菜单可选择「随机模式」：每关箭头随机分布、难度逐关递增，
   生成器在构造上保证关卡可通关（附加功能）。
 
@@ -18,9 +20,14 @@
   Z         撤销上一步（附加功能）
   H         提示当前可射出的箭头（附加功能）
   S         AI 自动求解当前关卡（附加功能）
+  M         开关音效（附加功能）
   空格/回车 开始 / 下一关 / 重试
   ESC       返回菜单 / 退出
   F2        保存截图到 screenshots/
+
+音效：
+  全部音效由 numpy 在运行时合成（正弦 / 三角 / 方波 / 锯齿波 + 白噪声、
+  频率扫描与包络），项目不携带任何音频素材文件；音频初始化失败时自动静音。
 """
 import os
 import sys
@@ -31,6 +38,10 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 
+try:
+    import numpy as np
+except ImportError:            # 未装 numpy 时游戏照常运行，仅音效静音
+    np = None
 import pygame
 
 # ============================== 基础配置 ==============================
@@ -38,6 +49,8 @@ WIN_W, WIN_H = 960, 720
 FPS = 60
 CELL = 64                     # 每格像素边长（缩小以留出底部按钮栏）
 ARROW_SCALE = 0.82            # 箭头相对格子的大小
+BTN_Y = WIN_H - 58            # 底部按钮栏的顶部 y
+BTN_H = 38                    # 按钮栏高度
 
 # 配色
 C_BG_TOP    = (22, 24, 40)
@@ -448,6 +461,125 @@ class Button:
         return self.rect.collidepoint(mpos)
 
 
+# ============================== 音效（运行时合成，零素材） ==============================
+# 项目不携带任何音频文件：所有音效都用 numpy 现场生成波形，
+# 合成 / 初始化任一步失败都会静默降级为静音，绝不影响游戏主流程。
+AUDIO_RATE = 44100            # 采样率（16 位、单声道）
+
+
+def _tone(freq_start, freq_end=None, dur=0.2, wave="sine", volume=0.5,
+          attack=0.004, noise=0.0):
+    """合成一段单声道 int16 PCM。
+
+    freq_start → freq_end 之间做线性扫频；wave 取 sine / triangle / square / saw；
+    attack 用于起始淡入以消除爆音；noise>0 时混入白噪声（做碰撞的闷响质感）。
+    """
+    if freq_end is None:
+        freq_end = freq_start
+    n = int(round(AUDIO_RATE * dur))
+    if n <= 0:
+        return b""
+    t = np.arange(n) / AUDIO_RATE
+    f0, f1 = max(freq_start, 1.0), max(freq_end, 1.0)
+    phase = 2 * np.pi * (f0 * t + (f1 - f0) * t * t / (2 * dur))
+    if wave == "sine":
+        w = np.sin(phase)
+    elif wave == "triangle":
+        w = 2 / np.pi * np.arcsin(np.sin(phase))
+    elif wave == "square":
+        w = np.sign(np.sin(phase))
+    else:                                        # saw
+        w = 2 * ((phase / (2 * np.pi)) % 1) - 1
+    if noise > 0:
+        w = w * (1 - noise) + np.random.default_rng(7).uniform(-1, 1, n) * noise
+    env = np.ones(n)
+    half = n // 2
+    if half > 1:
+        env[:half] = np.linspace(0, 1, half)                 # 淡入，去爆音
+    env[half:] *= np.linspace(1, 0.04, n - half)            # 缓慢衰减收尾
+    peak = max(1e-9, float(np.max(np.abs(w))))
+    return (w * env * volume * 32000 / peak).round().astype(np.int16).tobytes()
+
+
+def _seq(notes, gap=0.0):
+    """把若干段 PCM 首尾拼接；gap>0 时在段间插入静音。"""
+    sil = b"\x00\x00" * int(AUDIO_RATE * gap)
+    out = []
+    for i, note in enumerate(notes):
+        if i and gap > 0:
+            out.append(sil)
+        out.append(note)
+    return b"".join(out)
+
+
+class SoundBank:
+    """按需合成的一小批音效；初始化失败时保持静音且不抛异常。"""
+
+    def __init__(self):
+        self.on = True                 # 音效总开关（底部按钮 / M 键切换）
+        self.available = False
+        self.sounds = {}
+        if np is None:                 # 未装 numpy：跳过合成，整体静音
+            return
+        try:
+            try:
+                pygame.mixer.quit()      # 覆盖 pygame.init() 的默认参数
+            except Exception:
+                pass
+            pygame.mixer.init(AUDIO_RATE, -16, 1, 256)
+            self.sounds = {
+                # 命中飞出：明亮上行拨弦
+                "shoot": pygame.mixer.Sound(buffer=_tone(540, 1320, 0.19, "sine", 0.46)),
+                # 被阻挡：低沉锯齿 + 噪声闷响
+                "hit": pygame.mixer.Sound(
+                    buffer=_tone(190, 92, 0.26, "square", 0.34, noise=0.5)),
+                # 界面按钮：极短软点击
+                "click": pygame.mixer.Sound(buffer=_tone(880, 660, 0.05, "square", 0.16)),
+                # 撤销：下行短音
+                "undo": pygame.mixer.Sound(buffer=_tone(620, 300, 0.16, "triangle", 0.26)),
+                # 提示：柔和上行铃音
+                "hint": pygame.mixer.Sound(buffer=_tone(720, 1080, 0.34, "sine", 0.28)),
+                # 通关：C-E-G 上行琶音
+                "clear": pygame.mixer.Sound(buffer=_seq(
+                    [_tone(f, None, 0.16, "triangle", 0.4) for f in (523, 659, 784)],
+                    gap=0.05)),
+                # 失败：下行三音
+                "over": pygame.mixer.Sound(buffer=_seq(
+                    [_tone(f, None, 0.24, "saw", 0.32) for f in (392, 311, 233)],
+                    gap=0.08)),
+                # 全部通关：上行四音小号角
+                "victory": pygame.mixer.Sound(buffer=_seq(
+                    [_tone(f, None, 0.17, "triangle", 0.42)
+                     for f in (523, 659, 784, 1046)], gap=0.07)),
+            }
+            self.available = True
+        except Exception:
+            self.available = False
+            self.sounds = {}
+
+    def play(self, name):
+        if not self.on or not self.available:
+            return
+        snd = self.sounds.get(name)
+        if snd is not None:
+            try:
+                snd.play()
+            except Exception:
+                pass
+
+    def toggle(self):
+        """切换音效开关，立即生效；返回切换后的状态。"""
+        self.on = not self.on
+        try:
+            # 关：占用 0 个通道（立即静音）；开：恢复 8 通道并提示一声
+            pygame.mixer.set_num_channels(0 if not self.on else 8)
+        except Exception:
+            pass
+        if self.on:
+            self.play("click")
+        return self.on
+
+
 # ============================== 主游戏 ==============================
 class Game:
     # ---- 状态常量 ----
@@ -475,20 +607,23 @@ class Game:
         self.menu_return_btn = Button((WIN_W // 2 - 110, WIN_H // 2 + 98, 220, 44),
                                       "返回菜单", text_color=C_DIM)
         # 底部操作按钮栏（把原先的键盘功能全部做成按钮）
-        bw, bh, gap = 116, 38, 12
+        bw, bh, gap = 104, BTN_H, 10
         labels = [("撤销", C_DIM), ("提示", C_HINT), ("AI求解", C_OK),
-                  ("重新开始", C_ACCENT), ("截图", C_DIM), ("返回菜单", C_DIM)]
+                  ("重新开始", C_ACCENT), ("截图", C_DIM),
+                  ("音效", C_OK), ("返回菜单", C_DIM)]
         total = len(labels) * bw + (len(labels) - 1) * gap
         x0 = (WIN_W - total) // 2
-        by = WIN_H - 58
+        by = BTN_Y
         self.action_labels = [l for l, _ in labels]
         self.action_buttons = []
         for i, (lab, col) in enumerate(labels):
             self.action_buttons.append(
                 Button((x0 + i * (bw + gap), by, bw, bh), lab, text_color=col))
         self.btn_undo, self.btn_hint, self.btn_solve, \
-            self.btn_restart, self.btn_shot, self.btn_menu = self.action_buttons
+            self.btn_restart, self.btn_shot, self.btn_sound, self.btn_menu = \
+            self.action_buttons
 
+        self.sound = SoundBank()          # 合成音效（无音频素材，初始化失败则静音）
         self.feedback = ""
         self.feedback_t = 0.0
         self.title_t = 0.0
@@ -523,7 +658,7 @@ class Game:
         self.auto_steps = []       # 待执行的消除顺序 [(r, c), ...]
         self.auto_timer = 0.0      # 到下一次自动点击的倒计时
         self.pending_clear = False  # 最后一支箭是否正在飞出（飞完才进通关画面）
-        # 星级计分：满分 3 星；撤销 / 提示各只有 1 次机会，用一次扣 1 星；AI 求解只给 1 星
+        # 星级计分：满分 3 星；失误 / 撤销 / 提示各扣 1 星；AI 求解只给 1 星
         self.undos_left = 1
         self.hints_left = 1
         self.used_undos = False
@@ -562,6 +697,7 @@ class Game:
         """重新开始当前关卡（随机模式也恢复为同一布局）。"""
         self.total_stars -= self.stars   # 本关已计入的星数要退回，避免重复计分
         self._load_dict(self.current_level)
+        self.sound.play("click")
         self.set_feedback("已重新开始本关")
 
     def enter_random_mode(self):
@@ -569,12 +705,14 @@ class Game:
         self.total_stars = 0
         self.load_random_level()
         self.state = self.PLAYING
+        self.sound.play("click")
 
     def start_game(self):
         """从菜单开始一局固定关卡的新游戏，总分清零。"""
         self.total_stars = 0
         self.load_level(0)
         self.state = self.PLAYING
+        self.sound.play("click")
 
     # ---------- 棋盘逻辑 ----------
     def arrows_left(self):
@@ -648,11 +786,21 @@ class Game:
         self.auto_solving = True
         self.auto_steps = order
         self.auto_timer = 0.3
+        self.sound.play("hint")
         self.set_feedback("AI 求解中…本关只算 1 星（再按 S 停止）", 2.0)
 
     def stop_auto_solve(self):
         self.auto_solving = False
         self.auto_steps = []
+
+    # ---------- 音效开关 ----------
+    def toggle_sound(self):
+        """切换音效（按钮 / M 键）；按钮文字与颜色随状态同步。"""
+        on = self.sound.toggle()
+        self.btn_sound.text = "音效：开" if on else "音效：关"
+        self.btn_sound.text_color = C_OK if on else C_DIM
+        self.set_feedback("音效已开启" if on else "音效已静音")
+        return on
 
     # ---------- 历史/撤销 ----------
     def push_history(self):
@@ -677,7 +825,8 @@ class Game:
         self.board = snap
         self.mistakes = m
         self.hint_t = 0.0
-        self.set_feedback("已撤销上一步（-1 星）")
+        self.sound.play("undo")
+        self.set_feedback(f"已撤销上一步（-1 星，本关剩 {self.calc_stars()} 星）")
 
     def use_hint(self):
         """高亮当前可射出的箭头。本关只有 1 次提示机会，用一次扣 1 星。"""
@@ -689,14 +838,16 @@ class Game:
         self.hint_t = 2.2
         n = sum(1 for r in range(self.rows) for c in range(self.cols)
                 if self.board[r][c] and self.is_clear(r, c, self.board[r][c].d))
-        self.set_feedback(f"提示：当前有 {n} 支箭头可射出（-1 星）")
+        self.sound.play("hint")
+        self.set_feedback(f"提示：当前有 {n} 支箭头可射出（-1 星，本关剩 {self.calc_stars()} 星）")
 
     # ---------- 星级计分 ----------
     def calc_stars(self):
-        """本关星数：满 3 星；撤销 / 提示各用一次扣 1 星；用 AI 求解只给 1 星。"""
+        """本关星数：满 3 星；失误、撤销、提示各扣 1 星；用 AI 求解只给 1 星。"""
         if self.used_ai:
             return 1
-        return 3 - int(self.used_undos) - int(self.used_hints)
+        misses = self.mistakes_max - self.mistakes     # 已失误次数，每次扣 1 星
+        return max(0, 3 - misses - int(self.used_undos) - int(self.used_hints))
 
     # ---------- 反馈 ----------
     def set_feedback(self, msg, t=1.4):
@@ -716,6 +867,7 @@ class Game:
             cx, cy = self.cell_center(r, c)
             self.projectiles.append(Projectile(cx, cy, cell.d, C_ARROW))
             self.board[r][c] = None
+            self.sound.play("shoot")
             self.set_feedback("箭头飞出！")
             self.hint_t = 0.0
             if self.arrows_left() == 0:
@@ -729,11 +881,13 @@ class Game:
             cell.shake = 0.5
             cell.flash = 0.5
             self.mistakes -= 1
-            self.set_feedback("前方有阻挡！失误 -1")
+            self.sound.play("hit")
+            self.set_feedback(f"前方有阻挡！失误 -1（本关剩 {self.calc_stars()} 星）")
             self.hint_t = 0.0
             if self.mistakes <= 0:
                 self.state = self.GAME_OVER
                 self.stop_auto_solve()
+                self.sound.play("over")
 
     # ---------- 关卡推进 ----------
     def advance_level(self):
@@ -745,6 +899,7 @@ class Game:
             self.state = self.PLAYING
         else:
             self.state = self.VICTORY
+            self.sound.play("victory")
 
     # ---------- 截图 ----------
     def save_screenshot(self):
@@ -796,6 +951,8 @@ class Game:
                     self.set_feedback("已停止 AI 求解")
                 else:
                     self.start_auto_solve()
+            elif e.key == pygame.K_m:
+                self.toggle_sound()
             elif e.key == pygame.K_F2:
                 self.save_screenshot()
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
@@ -840,6 +997,8 @@ class Game:
                 self.restart_level()
             elif self.btn_shot.clicked(mpos):
                 self.save_screenshot()
+            elif self.btn_sound.clicked(mpos):
+                self.toggle_sound()
             elif self.btn_menu.clicked(mpos):
                 self.stop_auto_solve()
                 self.state = self.MENU
@@ -896,6 +1055,7 @@ class Game:
         if self.pending_clear and not self.projectiles:
             self.pending_clear = False
             self.state = self.LEVEL_CLEAR
+            self.sound.play("clear")
         # AI 自动求解：按拓扑序逐步点击
         if self.auto_solving and self.state == self.PLAYING and self.auto_steps:
             self.auto_timer -= dt
@@ -961,9 +1121,12 @@ class Game:
         self.btn_hint.text = f"提示×{self.hints_left}"
         for b in self.action_buttons:
             b.draw(self.screen)
-        tip = "点击箭头尝试射出，或用下方按钮操作"
-        t = font(15).render(tip, True, C_DIM)
-        self.screen.blit(t, t.get_rect(midbottom=(WIN_W // 2, WIN_H - 6)))
+        # 底部提示语：贴在按钮栏上方；反馈气泡出现或棋盘占满时不显示，避免文字叠字
+        if not (self.feedback_t > 0 and self.feedback):
+            t = font(15).render("点击箭头尝试射出，或用下方按钮操作", True, C_DIM)
+            board_bottom = self.grid_y + self.rows * CELL + 14
+            if t.get_height() + 8 <= BTN_Y - board_bottom:
+                self.screen.blit(t, t.get_rect(midbottom=(WIN_W // 2, BTN_Y - 8)))
 
     def draw_hud(self):
         bar = pygame.Rect(0, 0, WIN_W, 100)
@@ -1000,6 +1163,12 @@ class Game:
             t4 = font(20).render(f"总星 {self.total_stars} / {len(LEVELS) * 3}",
                                  True, C_ACCENT)
         self.screen.blit(t4, t4.get_rect(midright=(WIN_W - 30, 34)))
+        # 本关实时星数：失误 / 撤销 / 提示每用一次立刻减少，便于及时调整策略
+        got = self.calc_stars()
+        t5 = font(20, True).render(
+            "本关 " + "★" * got + "☆" * (3 - got), True,
+            C_ACCENT if got == 3 else C_DIM)
+        self.screen.blit(t5, t5.get_rect(midright=(WIN_W - 30, 64)))
 
     def draw_grid(self):
         pad = 14
@@ -1088,7 +1257,7 @@ class Game:
         self.screen.blit(t, t.get_rect(center=(WIN_W // 2, WIN_H // 2 - 60)))
         s = font(24).render("你成功射出了所有关卡的全部箭头！", True, C_TEXT)
         self.screen.blit(s, s.get_rect(center=(WIN_W // 2, WIN_H // 2)))
-        # 星级统计：撤销 / 提示各用一次扣 1 星，AI 求解只给 1 星
+        # 星级统计：失误 / 撤销 / 提示各用一次扣 1 星，AI 求解只给 1 星
         t2 = font(34, True).render(
             f"总星数：{self.total_stars} / {len(LEVELS) * 3}", True, C_ACCENT)
         self.screen.blit(t2, t2.get_rect(center=(WIN_W // 2, WIN_H // 2 + 48)))

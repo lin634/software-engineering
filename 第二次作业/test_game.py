@@ -8,7 +8,7 @@
   T04 消除本关全部箭头 -> 通关并进入下一关
   T05 失误次数耗尽 -> 失败，且可重新开始
   T06 游戏进行中重新开始 -> 布局与失误次数恢复
-附加 T07–T09：随机关可通关、AI 求解、星级计分规则
+附加 T07–T09：随机关可通关、AI 求解、星级计分规则（含失误扣星与音效开关）
 
 运行： python test_game.py
 """
@@ -153,7 +153,8 @@ def run():
     check("T08", order_ok and g.arrows_left() == 0 and g.state == Game.LEVEL_CLEAR)
 
     # ---- T09（附加）星级规则 ----
-    print("T09 星级规则：满 3 星；撤销/提示各 1 次扣 1 星；AI 只给 1 星；失误上限统一 3")
+    print("T09 星级规则：满 3 星；失误/撤销/提示各扣 1 星；AI 只给 1 星；"
+          "失误上限统一 3；音效开关与合成资源")
 
     def clear_all(game):
         """按依赖顺序点掉剩余全部箭头，直到触发通关。"""
@@ -238,7 +239,39 @@ def run():
     g.restart_level()
     c8 = acc == 3 and g.total_stars == 0 and g.arrows_left() == 4
 
-    check("T09", c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8)
+    # 9) 每失误 1 次扣 1 星：1 次 -> 2 星，2 次 -> 1 星
+    fresh()
+    g.click_cell(4, 1)                     # (4,1) 朝右，被 (4,3) 阻挡 -> 失误
+    one_miss = g.mistakes_max - g.mistakes == 1 and g.calc_stars() == 2
+    g.click_cell(4, 1)                     # 第 2 次失误
+    two_miss = g.mistakes_max - g.mistakes == 2 and g.calc_stars() == 1
+    clear_all(g)
+    c9 = one_miss and two_miss and g.stars == 1
+
+    # 10) 失误 + 撤销叠加：星数下限为 0，不会变负
+    fresh()
+    g.click_cell(4, 1)
+    g.click_cell(4, 1)                     # 已失误 2 次，本关剩 1 星
+    g.click_cell(2, 0)                     # 飞出，供撤销使用
+    g.undo()                               # 第 3 项扣分，落到 0
+    floored = g.calc_stars() == 0
+    clear_all(g)
+    c10 = floored and g.stars == 0
+
+    # 11) 音效开关：状态与按钮文字同步，切换两次恢复原状
+    fresh()
+    was_on = g.sound.on
+    g.toggle_sound()
+    muted = (not g.sound.on) and g.btn_sound.text == "音效：关"
+    g.toggle_sound()
+    c11 = muted and g.sound.on == was_on and g.btn_sound.text == "音效：开"
+
+    # 12) 零素材合成：8 个音效全部就绪（音频设备不可用时整体静音降级）
+    want = {"shoot", "hit", "click", "undo", "hint", "clear", "over", "victory"}
+    c12 = set(g.sound.sounds) == want and len(g.sound.sounds) == 8 and g.sound.available
+
+    check("T09", c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8
+          and c9 and c10 and c11 and c12)
 
     print(f"\n结果：{passed} 通过，{failed} 失败")
     return 0 if failed == 0 else 1

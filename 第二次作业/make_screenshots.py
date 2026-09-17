@@ -158,4 +158,19 @@ quiet(g)
 g.draw()
 shot("09_clear_2stars.png")
 
+# 10) 失误扣星：本关失误 2 次，通关只评 1 星
+g.load_level(0)
+g.state = Game.PLAYING
+g.total_stars = 0
+cell = find_blocked(g)
+assert cell, "第 1 关应存在被阻挡的箭头"
+for _ in range(2):
+    g.click_cell(*cell)          # 每次失误 -1 星
+assert g.calc_stars() == 1, "失误 2 次后本关应剩 1 星"
+clear_level(g)
+assert g.stars == 1, "失误 2 次应为 1 星"
+quiet(g)
+g.draw()
+shot("10_clear_1star_mistakes.png")
+
 print("done")
