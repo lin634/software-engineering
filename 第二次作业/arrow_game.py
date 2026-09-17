@@ -36,7 +36,7 @@ import pygame
 # ============================== 基础配置 ==============================
 WIN_W, WIN_H = 960, 720
 FPS = 60
-CELL = 76                     # 每格像素边长
+CELL = 64                     # 每格像素边长（缩小以留出底部按钮栏）
 ARROW_SCALE = 0.82            # 箭头相对格子的大小
 
 # 配色
@@ -474,7 +474,20 @@ class Game:
         self.retry_btn = Button((WIN_W // 2 - 120, WIN_H // 2 + 30, 240, 54), "重新开始")
         self.menu_return_btn = Button((WIN_W // 2 - 110, WIN_H // 2 + 98, 220, 44),
                                       "返回菜单", text_color=C_DIM)
-        self.hud_restart = Button((WIN_W - 150, 28, 120, 44), "重新开始")
+        # 底部操作按钮栏（把原先的键盘功能全部做成按钮）
+        bw, bh, gap = 116, 38, 12
+        labels = [("撤销", C_DIM), ("提示", C_HINT), ("AI求解", C_OK),
+                  ("重新开始", C_ACCENT), ("截图", C_DIM), ("返回菜单", C_DIM)]
+        total = len(labels) * bw + (len(labels) - 1) * gap
+        x0 = (WIN_W - total) // 2
+        by = WIN_H - 58
+        self.action_labels = [l for l, _ in labels]
+        self.action_buttons = []
+        for i, (lab, col) in enumerate(labels):
+            self.action_buttons.append(
+                Button((x0 + i * (bw + gap), by, bw, bh), lab, text_color=col))
+        self.btn_undo, self.btn_hint, self.btn_solve, \
+            self.btn_restart, self.btn_shot, self.btn_menu = self.action_buttons
 
         self.feedback = ""
         self.feedback_t = 0.0
@@ -512,7 +525,7 @@ class Game:
         gw = self.cols * CELL
         gh = self.rows * CELL
         self.grid_x = (WIN_W - gw) // 2
-        self.grid_y = 120 + (WIN_H - 120 - 40 - gh) // 2
+        self.grid_y = 120 + (WIN_H - 120 - 80 - gh) // 2   # 底部留 80px 给按钮栏
 
     def load_level(self, i):
         """加载固定关卡 i（关卡/画廊模式）。"""
@@ -691,7 +704,21 @@ class Game:
 
     # ---------- 截图 ----------
     def save_screenshot(self):
-        name = f"shot_{int(time.time())}.png"
+        name = f"arrow_{int(time.time())}.png"
+        # 网页版：把游戏 canvas 直接导出为 PNG 并触发下载
+        try:
+            from js import document            # 仅 pygbag 环境存在
+            cvs = document.querySelectorAll("canvas")
+            if cvs.length:
+                a = document.createElement("a")
+                a.setAttribute("href", cvs[0].toDataURL("image/png"))
+                a.setAttribute("download", name)
+                a.click()
+                self.set_feedback("已下载截图 " + name, 1.6)
+                return
+        except Exception:
+            pass
+        # 桌面版：保存到 screenshots/
         try:
             os.makedirs("screenshots", exist_ok=True)
             pygame.image.save(self.screen, os.path.join("screenshots", name))
@@ -755,9 +782,29 @@ class Game:
             elif self.random_btn.clicked(mpos):
                 self.enter_random_mode()
         elif self.state == self.PLAYING:
-            if self.hud_restart.clicked(mpos):
+            if self.btn_undo.clicked(mpos):
+                self.stop_auto_solve()
+                self.undo()
+            elif self.btn_hint.clicked(mpos):
+                self.stop_auto_solve()
+                self.hint_t = 2.2
+                n = sum(1 for r in range(self.rows) for c in range(self.cols)
+                        if self.board[r][c] and self.is_clear(r, c, self.board[r][c].d))
+                self.set_feedback(f"提示：当前有 {n} 支箭头可射出")
+            elif self.btn_solve.clicked(mpos):
+                if self.auto_solving:
+                    self.stop_auto_solve()
+                    self.set_feedback("已停止 AI 求解")
+                else:
+                    self.start_auto_solve()
+            elif self.btn_restart.clicked(mpos):
                 self.stop_auto_solve()
                 self.restart_level()
+            elif self.btn_shot.clicked(mpos):
+                self.save_screenshot()
+            elif self.btn_menu.clicked(mpos):
+                self.stop_auto_solve()
+                self.state = self.MENU
             else:
                 cell = self.pixel_to_cell(*mpos)
                 if cell:
@@ -783,7 +830,8 @@ class Game:
         self.next_btn.update(mpos)
         self.retry_btn.update(mpos)
         self.menu_return_btn.update(mpos)
-        self.hud_restart.update(mpos)
+        for b in self.action_buttons:
+            b.update(mpos)
         self.title_t += dt
         if self.feedback_t > 0:
             self.feedback_t -= dt
@@ -863,9 +911,12 @@ class Game:
         self.draw_hud()
         self.draw_grid()
         self.draw_projectiles()
-        hint_txt = "鼠标点击箭头尝试射出  ·  R 重新开始  ·  Z 撤销  ·  H 提示  ·  S AI求解  ·  ESC 菜单  ·  F2 截图"
-        t = font(16).render(hint_txt, True, C_DIM)
-        self.screen.blit(t, t.get_rect(midbottom=(WIN_W // 2, WIN_H - 8)))
+        # 底部操作按钮栏
+        for b in self.action_buttons:
+            b.draw(self.screen)
+        tip = "点击箭头尝试射出，或用下方按钮操作"
+        t = font(15).render(tip, True, C_DIM)
+        self.screen.blit(t, t.get_rect(midbottom=(WIN_W // 2, WIN_H - 6)))
 
     def draw_hud(self):
         bar = pygame.Rect(0, 0, WIN_W, 100)
@@ -891,7 +942,6 @@ class Game:
             pygame.draw.circle(self.screen, C_CELL_LINE, (px, py), 8, 1)
         remain = font(16).render(f"{self.mistakes}/{self.mistakes_max}", True, C_DIM)
         self.screen.blit(remain, (300 + 64 + self.mistakes_max * 24 + 6, 64))
-        self.hud_restart.draw(self.screen)
 
     def draw_grid(self):
         pad = 14
