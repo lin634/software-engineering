@@ -57,6 +57,7 @@
 ├── verify_levels.py      # 关卡可解性验证工具（DFS 求解器，开发期使用）
 ├── test_game.py          # 自动化逻辑测试 T01–T10（headless，无需显示器）
 ├── gen_new_levels.py     # 关卡生成脚本：按规格批量生成并验证可通关的新关卡
+├── build_exe.py          # 打包脚本：用 PyInstaller 生成 dist/一箭又一箭.exe
 ├── make_screenshots.py   # 自动生成界面截图（headless）
 ├── requirements.txt      # 依赖列表
 ├── README.md             # 本文件
@@ -92,6 +93,17 @@ python arrow_game.py
 > python verify_levels.py      # 验证 20 个关卡均可通关
 > python make_screenshots.py   # 重新生成 README / 博文中的界面截图
 > ```
+
+### 打包成可执行文件（可选）
+
+本项目不携带任何图片、音频或字体文件，所以可以直接打成单个 exe，**目标机器无需安装 Python**：
+
+```bash
+pip install pyinstaller
+python build_exe.py
+```
+
+产物为 `dist/一箭又一箭.exe`（约 24 MB，`--onefile --windowed`，双击即玩，无控制台窗口）。中文界面使用系统自带的微软雅黑（`msyh.ttc`），无需额外分发字体。`build/` 与 `dist/` 属构建产物，已在 `.gitignore` 中排除；如需把 exe 一并提交仓库，用 `git add -f dist/`。
 
 ## 游戏操作说明
 
