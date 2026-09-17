@@ -180,6 +180,176 @@ LEVELS = [
             "L..UU.R.",
         ],
     },
+    # ---- 第 9 ~ 20 关：8x8 棋盘，箭头数 24 -> 26，难度继续递增 ----
+    # 布局由 generate_random_level 以固定种子生成并经求解器验证可通关。
+    {
+        "name": "阵云密布",
+        "mistakes": 3,
+        "grid": [
+            "...LR...",
+            "L....L.U",
+            "...UL.D.",
+            "..D.L...",
+            "U.R.....",
+            "UU.R..D.",
+            ".LL.D.L.",
+            "RR...DR.",
+        ],
+    },
+    {
+        "name": "箭走游龙",
+        "mistakes": 3,
+        "grid": [
+            "DU...LU.",
+            ".LUDR...",
+            "....L.UL",
+            "RD....R.",
+            "L.......",
+            "..D.LD.R",
+            "L.L.R.D.",
+            ".......R",
+        ],
+    },
+    {
+        "name": "乱箭交错",
+        "mistakes": 3,
+        "grid": [
+            ".U..U.L.",
+            "L.L....D",
+            "......L.",
+            "....LD.R",
+            "L..L.DU.",
+            "D.UU...L",
+            "DL.U..D.",
+            "..DD...L",
+        ],
+    },
+    {
+        "name": "矢影重重",
+        "mistakes": 3,
+        "grid": [
+            "L.......",
+            ".....L..",
+            "L..UD.L.",
+            ".U.L..RR",
+            ".L..L.UU",
+            "U.DL.U..",
+            ".R.DD..R",
+            "R....UU.",
+        ],
+    },
+    {
+        "name": "箭阵连环",
+        "mistakes": 3,
+        "grid": [
+            "LL..D.U.",
+            "U.......",
+            "D..DR..D",
+            ".UL.R.D.",
+            ".R.....R",
+            "LL.R..R.",
+            "...L..DL",
+            "..DL...L",
+        ],
+    },
+    {
+        "name": "矢海沉舟",
+        "mistakes": 3,
+        "grid": [
+            ".R.R...D",
+            "DUU...L.",
+            "DL....RD",
+            "..L.....",
+            "...L.RR.",
+            "..UDU.U.",
+            ".L..DU..",
+            "L.UDR...",
+        ],
+    },
+    {
+        "name": "万矢齐发",
+        "mistakes": 3,
+        "grid": [
+            ".UU...R.",
+            "D.DU...R",
+            "DR..UU..",
+            "...D..L.",
+            "LU..L..L",
+            ".RD..U.R",
+            "...L.L..",
+            "..L.U..L",
+        ],
+    },
+    {
+        "name": "天罗地网",
+        "mistakes": 3,
+        "grid": [
+            "..DL.RR.",
+            ".U.R..UR",
+            "..R.U...",
+            ".R..D.D.",
+            "....L...",
+            "U...D.RU",
+            "DLL..R..",
+            "DU...D.U",
+        ],
+    },
+    {
+        "name": "群矢破空",
+        "mistakes": 3,
+        "grid": [
+            "LRU...U.",
+            ".RURU...",
+            ".UR.R...",
+            "L..UU...",
+            "..L..R.R",
+            "R....RD.",
+            ".....DRD",
+            ".U.U..R.",
+        ],
+    },
+    {
+        "name": "箭神之境",
+        "mistakes": 3,
+        "grid": [
+            "U.LU.D..",
+            "U..RR...",
+            "..UD...L",
+            "LU..U...",
+            "LU....RD",
+            ".L....U.",
+            ".D.DU..R",
+            "..D..RD.",
+        ],
+    },
+    {
+        "name": "万箭穿云",
+        "mistakes": 3,
+        "grid": [
+            "..UU.R..",
+            "U...U.L.",
+            "....LL.U",
+            ".L...R.U",
+            "LUD.....",
+            ".R...UDR",
+            "L..L..D.",
+            "UD.RU...",
+        ],
+    },
+    {
+        "name": "箭阵终极",
+        "mistakes": 3,
+        "grid": [
+            "R....UR.",
+            ".UR.DD..",
+            "..D....L",
+            "...LL.UD",
+            "....RDU.",
+            "LL.D.R..",
+            "UD......",
+            ".LLD...L",
+        ],
+    },
 ]
 
 def _pick_direction(arrows, rows, cols, r, c, rng):
@@ -584,6 +754,7 @@ class SoundBank:
 class Game:
     # ---- 状态常量 ----
     MENU = "MENU"
+    LEVEL_SELECT = "LEVEL_SELECT"   # 二级菜单：选择关卡
     PLAYING = "PLAYING"
     LEVEL_CLEAR = "LEVEL_CLEAR"
     GAME_OVER = "GAME_OVER"
@@ -598,6 +769,14 @@ class Game:
         self.random_num = 0            # 随机模式下已过的关卡数
         self.current_level = LEVELS[0]  # 当前加载的关卡数据（固定或随机）
 
+        # 通关进度（仅存内存，程序关闭即重置）
+        #   cleared      : 已通关的固定关卡序号集合
+        #   level_stars  : {关卡序号: 该关最佳星数}
+        #   解锁规则：第 0 关默认解锁；其后第 i 关在第 i-1 关通关后解锁；
+        #            已通关的关卡可任意重玩。
+        self.cleared = set()
+        self.level_stars = {}
+
         # 各界面按钮
         self.menu_btn = Button((WIN_W // 2 - 120, 425, 240, 58), "开始游戏")
         self.random_btn = Button((WIN_W // 2 - 120, 505, 240, 54),
@@ -606,6 +785,11 @@ class Game:
         self.retry_btn = Button((WIN_W // 2 - 120, WIN_H // 2 + 30, 240, 54), "重新开始")
         self.menu_return_btn = Button((WIN_W // 2 - 110, WIN_H // 2 + 98, 220, 44),
                                       "返回菜单", text_color=C_DIM)
+        # 关卡选择二级菜单的“返回主菜单”按钮（独立于 overlay 用的 menu_return_btn）
+        self.ls_back_btn = Button((WIN_W // 2 - 110, 600, 220, 44),
+                                  "返回主菜单", text_color=C_DIM)
+        # 关卡选择二级菜单的网格单元（5 列 x 4 行 = 20 关）
+        self.level_cells = self._build_level_cells()
         # 底部操作按钮栏（把原先的键盘功能全部做成按钮）
         bw, bh, gap = 104, BTN_H, 10
         labels = [("撤销", C_DIM), ("提示", C_HINT), ("AI求解", C_OK),
@@ -633,6 +817,20 @@ class Game:
         self.load_level(0)
 
     # ---------- 背景与关卡 ----------
+    def _build_level_cells(self):
+        """关卡选择菜单的 20 个按钮矩形（5 列 x 4 行）。"""
+        cols, rows = 5, 4
+        bw, bh, gap = 150, 96, 12
+        total_w = cols * bw + (cols - 1) * gap
+        x0 = (WIN_W - total_w) // 2
+        y0 = 150
+        cells = []
+        for i in range(len(LEVELS)):
+            r, c = divmod(i, cols)
+            rect = pygame.Rect(x0 + c * (bw + gap),
+                               y0 + r * (bh + gap), bw, bh)
+            cells.append((rect, i))
+        return cells
     def _make_bg(self):
         surf = pygame.Surface((WIN_W, WIN_H))
         for y in range(WIN_H):
@@ -694,8 +892,13 @@ class Game:
                          "grid": grid})
 
     def restart_level(self):
-        """重新开始当前关卡（随机模式也恢复为同一布局）。"""
-        self.total_stars -= self.stars   # 本关已计入的星数要退回，避免重复计分
+        """重新开始当前关卡（随机模式也恢复为同一布局）。
+
+        固定关卡保留已记录的最佳星数（重玩不退星）；随机模式按本局累计计分，
+        重开时把本关已计入的星数退回，避免重复计分。
+        """
+        if self.random_mode:
+            self.total_stars -= self.stars
         self._load_dict(self.current_level)
         self.sound.play("click")
         self.set_feedback("已重新开始本关")
@@ -707,12 +910,29 @@ class Game:
         self.state = self.PLAYING
         self.sound.play("click")
 
+    def is_unlocked(self, i):
+        """第 i 关是否可选：首关默认解锁，其后需上一关通关；已通关的可重玩。"""
+        if not (0 <= i < len(LEVELS)):
+            return False
+        return i == 0 or (i - 1) in self.cleared or i in self.cleared
+
     def start_game(self):
-        """从菜单开始一局固定关卡的新游戏，总分清零。"""
-        self.total_stars = 0
-        self.load_level(0)
+        """从主菜单进入「选择关卡」二级菜单，保留已有进度。"""
+        self.state = self.LEVEL_SELECT
+        self.sound.play("click")
+
+    def enter_level(self, i):
+        """从关卡选择菜单进入第 i 关（需已解锁）。"""
+        if not self.is_unlocked(i):
+            self.set_feedback(f"第 {i + 1} 关尚未解锁", 1.2)
+            return
+        self.load_level(i)
         self.state = self.PLAYING
         self.sound.play("click")
+
+    def total_stars_of(self):
+        """固定关卡累计星数（取每关历史最佳）。"""
+        return sum(self.level_stars.values())
 
     # ---------- 棋盘逻辑 ----------
     def arrows_left(self):
@@ -872,7 +1092,13 @@ class Game:
             self.hint_t = 0.0
             if self.arrows_left() == 0:
                 self.stars = self.calc_stars()
-                self.total_stars += self.stars
+                if self.random_mode:            # 随机模式：累计计分
+                    self.total_stars += self.stars
+                else:                           # 固定关卡：记最佳、解锁下一关
+                    i = self.level_index
+                    self.cleared.add(i)
+                    self.level_stars[i] = max(self.level_stars.get(i, 0), self.stars)
+                    self.total_stars = self.total_stars_of()
                 self.pending_clear = True   # 等最后一支箭完全飞出再进通关画面
                 self.stop_auto_solve()
         else:
@@ -933,7 +1159,11 @@ class Game:
             if e.key == pygame.K_ESCAPE:
                 if self.state == self.MENU:
                     return False
-                self.state = self.MENU
+                if self.state == self.LEVEL_SELECT:
+                    self.state = self.MENU
+                else:                       # 游戏中 / 通关 / 失败 / 胜利 -> 回到选关
+                    self.stop_auto_solve()
+                    self.state = self.LEVEL_SELECT
             elif e.key in (pygame.K_SPACE, pygame.K_RETURN):
                 self._activate()
             elif e.key == pygame.K_r and self.state == self.PLAYING:
@@ -963,6 +1193,11 @@ class Game:
         """空格/回车在不同状态下的通用动作。"""
         if self.state == self.MENU:
             self.start_game()
+        elif self.state == self.LEVEL_SELECT:
+            # 进入下一关未通关的关卡；全部通关则回到第 1 关重玩
+            target = next((i for i in range(len(LEVELS))
+                           if self.is_unlocked(i) and i not in self.cleared), None)
+            self.enter_level(target if target is not None else 0)
         elif self.state == self.LEVEL_CLEAR:
             self.advance_level()
         elif self.state == self.GAME_OVER:
@@ -977,6 +1212,14 @@ class Game:
                 self.start_game()
             elif self.random_btn.clicked(mpos):
                 self.enter_random_mode()
+        elif self.state == self.LEVEL_SELECT:
+            for rect, i in self.level_cells:
+                if rect.collidepoint(mpos):
+                    self.enter_level(i)
+                    return
+            if self.ls_back_btn.clicked(mpos):
+                self.state = self.MENU
+                self.sound.play("click")
         elif self.state == self.PLAYING:
             if self.pending_clear:
                 return          # 最后一支箭正在飞出，动画期间忽略点击
@@ -1001,7 +1244,8 @@ class Game:
                 self.toggle_sound()
             elif self.btn_menu.clicked(mpos):
                 self.stop_auto_solve()
-                self.state = self.MENU
+                self.state = self.LEVEL_SELECT
+                self.sound.play("click")
             else:
                 cell = self.pixel_to_cell(*mpos)
                 if cell:
@@ -1010,12 +1254,16 @@ class Game:
         elif self.state == self.LEVEL_CLEAR:
             if self.next_btn.clicked(mpos):
                 self.advance_level()
+            elif self.menu_return_btn.clicked(mpos):
+                self.state = self.LEVEL_SELECT
+                self.sound.play("click")
         elif self.state == self.GAME_OVER:
             if self.retry_btn.clicked(mpos):
                 self.restart_level()
                 self.state = self.PLAYING
             elif self.menu_return_btn.clicked(mpos):
-                self.state = self.MENU
+                self.state = self.LEVEL_SELECT
+                self.sound.play("click")
         elif self.state == self.VICTORY:
             if self.menu_return_btn.clicked(mpos):
                 self.state = self.MENU
@@ -1027,6 +1275,7 @@ class Game:
         self.next_btn.update(mpos)
         self.retry_btn.update(mpos)
         self.menu_return_btn.update(mpos)
+        self.ls_back_btn.update(mpos)
         for b in self.action_buttons:
             b.update(mpos)
         self.title_t += dt
@@ -1072,6 +1321,8 @@ class Game:
         self.screen.blit(self.bg, (0, 0))
         if self.state == self.MENU:
             self.draw_menu()
+        elif self.state == self.LEVEL_SELECT:
+            self.draw_level_select()
         elif self.state == self.VICTORY:
             self.draw_victory()
         else:  # PLAYING / LEVEL_CLEAR / GAME_OVER
@@ -1087,10 +1338,12 @@ class Game:
                     last = self.level_index == len(LEVELS) - 1
                     sub = (f"第 {self.level_index + 1} 关 · {self.current_level['name']}"
                            f"{tag}")
+                    self.menu_return_btn.text = "选关"
                     self.draw_overlay("通关！", sub,
                                       "下一关" if not last else "完成全部", self.next_btn,
-                                      stars=self.stars)
+                                      stars=self.stars, extra=self.menu_return_btn)
             elif self.state == self.GAME_OVER:
+                self.menu_return_btn.text = "返回选关"
                 self.draw_overlay("挑战失败", "剩余失误次数已耗尽，再来一次！",
                                   "重新开始", self.retry_btn, bad=True,
                                   extra=self.menu_return_btn)
@@ -1108,9 +1361,61 @@ class Game:
             self.draw_arrow(cx, cy, d, C_ARROW, scale=1.15)
         self.menu_btn.draw(self.screen)
         self.random_btn.draw(self.screen)
+        # 主菜单显示当前进度（程序运行期内保留）
+        prog = font(18).render(
+            f"进度：已通关 {len(self.cleared)}/{len(LEVELS)} 关 · "
+            f"总星 {self.total_stars_of()} / {len(LEVELS) * 3}",
+            True, C_DIM)
+        self.screen.blit(prog, prog.get_rect(center=(WIN_W // 2, 575)))
         foot = font(16).render("软件工程第二次个人作业 · 学号 102401129 · 空格/回车 开始",
                                True, C_DIM)
         self.screen.blit(foot, foot.get_rect(center=(WIN_W // 2, WIN_H - 40)))
+
+    def draw_level_select(self):
+        """二级菜单：20 关网格，解锁/锁定状态与最佳星数一目了然。"""
+        title = font(44, True).render("选择关卡", True, C_ACCENT)
+        self.screen.blit(title, title.get_rect(center=(WIN_W // 2, 60)))
+        cleared_n = len(self.cleared)
+        sub = font(20).render(
+            f"已通关 {cleared_n}/{len(LEVELS)} 关 · 总星 "
+            f"{self.total_stars_of()} / {len(LEVELS) * 3}",
+            True, C_DIM)
+        self.screen.blit(sub, sub.get_rect(center=(WIN_W // 2, 108)))
+        tip = font(15).render("点击已解锁的关卡进入；通关后可任意重玩。ESC 返回主菜单",
+                              True, C_DIM)
+        self.screen.blit(tip, tip.get_rect(center=(WIN_W // 2, 130)))
+
+        mpos = pygame.mouse.get_pos()
+        for rect, i in self.level_cells:
+            lvl = LEVELS[i]
+            unlocked = self.is_unlocked(i)
+            done = i in self.cleared
+            stars = self.level_stars.get(i, 0)
+            hover = unlocked and rect.collidepoint(mpos)
+            # 单元底色
+            bg_col = C_BTN if unlocked else (44, 48, 68)
+            pygame.draw.rect(self.screen, bg_col, rect, border_radius=10)
+            border = C_ACCENT if hover else (C_OK if done else C_CELL_LINE)
+            pygame.draw.rect(self.screen, border, rect, 2, border_radius=10)
+            # 关卡号
+            num_col = C_TEXT if unlocked else C_DIM
+            t1 = font(22, True).render(f"第 {i + 1} 关", True, num_col)
+            self.screen.blit(t1, t1.get_rect(midtop=(rect.centerx, rect.top + 6)))
+            # 关名
+            name = lvl["name"]
+            t2 = font(16).render(name, True,
+                                 C_TEXT if unlocked else C_DIM)
+            self.screen.blit(t2, t2.get_rect(midtop=(rect.centerx, rect.top + 34)))
+            # 状态：星数 / 未通关 / 未解锁
+            if not unlocked:
+                t3 = font(15, True).render("未解锁", True, C_DIM)
+            elif done:
+                t3 = font(17, True).render("★" * stars + "☆" * (3 - stars),
+                                           True, C_ACCENT)
+            else:
+                t3 = font(15).render("未通关", True, C_DIM)
+            self.screen.blit(t3, t3.get_rect(midbottom=(rect.centerx, rect.bottom - 6)))
+        self.ls_back_btn.draw(self.screen)
 
     def draw_play(self):
         self.draw_hud()

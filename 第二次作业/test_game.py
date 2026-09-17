@@ -8,7 +8,8 @@
   T04 消除本关全部箭头 -> 通关并进入下一关
   T05 失误次数耗尽 -> 失败，且可重新开始
   T06 游戏进行中重新开始 -> 布局与失误次数恢复
-附加 T07–T09：随机关可通关、AI 求解、星级计分规则（含失误扣星与音效开关）
+附加 T07–T10：随机关可通关、AI 求解、星级计分规则（含失误扣星与音效开关）、
+选关二级菜单与通关进度
 
 运行： python test_game.py
 """
@@ -49,6 +50,10 @@ def setup(game, grid, mistakes=3):
     gh = game.rows * CELL
     game.grid_x = (WIN_W - gw) // 2
     game.grid_y = 120 + (WIN_H - 120 - 80 - gh) // 2
+    # 进度状态隔离：自定义关卡不应携带其它关卡的通关记录
+    game.cleared = set()
+    game.level_stars = {}
+    game.total_stars = 0
 
 
 def dirs(game):
@@ -175,6 +180,8 @@ def run():
     def fresh():
         g.load_level(0)
         g.state = Game.PLAYING
+        g.cleared = set()
+        g.level_stars = {}
         g.total_stars = 0
 
     # 1) 不用任何辅助 -> 3 星
@@ -232,12 +239,12 @@ def run():
     c7 = all(lv["mistakes"] == 3 for lv in LEVELS) and all(
         random_level_spec(1 + i)[3] == 3 for i in range(12))
 
-    # 8) 重开本关要退回已计入的星数，避免重复计分
+    # 8) 重开本关保留已记录的最佳星数、棋盘恢复（固定关卡重玩不退星）
     fresh()
     clear_all(g)
     acc = g.total_stars
     g.restart_level()
-    c8 = acc == 3 and g.total_stars == 0 and g.arrows_left() == 4
+    c8 = acc == 3 and g.total_stars == 3 and g.arrows_left() == 4
 
     # 9) 每失误 1 次扣 1 星：1 次 -> 2 星，2 次 -> 1 星
     fresh()
@@ -272,6 +279,87 @@ def run():
 
     check("T09", c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8
           and c9 and c10 and c11 and c12)
+
+    # ---- T10（附加）关卡选择二级菜单与通关进度 ----
+    print("T10 选关二级菜单：解锁规则、进度保留、通关后可重玩、20 关结算")
+
+    def drain(game):
+        """按依赖顺序点掉剩余全部箭头，并播完飞出动画直到通关画面。"""
+        for _ in range(6000):
+            if game.state != Game.PLAYING:
+                return
+            for r in range(game.rows):
+                for c in range(game.cols):
+                    a = game.board[r][c]
+                    if a and game.is_clear(r, c, a.d):
+                        game.click_cell(r, c)
+                        break
+                else:
+                    continue
+                break
+            game.update(0.1, (0, 0))
+
+    # 关卡数量与二级菜单状态常量
+    n1 = len(LEVELS) == 20 and Game.LEVEL_SELECT == "LEVEL_SELECT"
+
+    # 主菜单 -> 二级菜单：进度从零开始，仅首关可选
+    fresh()
+    g.cleared = set()
+    g.level_stars = {}
+    g.total_stars = 0
+    g.start_game()
+    c1 = (g.state == Game.LEVEL_SELECT and g.is_unlocked(0)
+          and not g.is_unlocked(1) and not g.is_unlocked(19))
+
+    # 点击未解锁关卡被拒绝，停留在选关界面且不产生通关记录
+    g.enter_level(19)
+    locked = (g.state == Game.LEVEL_SELECT and 19 not in g.cleared
+              and g.level_index == 0)
+
+    # 进入第 1 关，菜单网格与关卡数一致
+    g.enter_level(0)
+    entered = (g.state == Game.PLAYING and g.level_index == 0
+               and len(g.level_cells) == len(LEVELS))
+
+    # 通关第 1 关 -> 记最佳星数并累计总星
+    drain(g)
+    cleared_ok = (g.state == Game.LEVEL_CLEAR and g.cleared == {0}
+                  and g.level_stars[0] == 3 and g.total_stars == 3)
+
+    # 通关后「下一关」直达第 2 关；通关画面可退回选关界面且进度保留
+    g.advance_level()
+    nxt = g.level_index == 1 and g.state == Game.PLAYING
+    drain(g)
+    g.state = Game.LEVEL_SELECT
+    g.draw()
+    kept = (g.cleared == {0, 1} and g.total_stars == 6
+            and g.is_unlocked(1) and g.is_unlocked(2)
+            and not g.is_unlocked(3))
+
+    # 已通关关卡可重玩，重玩按历史最佳计分、不退星
+    g.enter_level(0)
+    replayed = g.state == Game.PLAYING and g.level_index == 0
+    drain(g)
+    again = g.level_stars[0] == 3 and g.total_stars == 6
+
+    # 通关最后一关 -> 全部通关结算页，总星为各关最佳之和
+    g.cleared = set(range(len(LEVELS)))
+    g.level_stars = {i: 3 for i in range(len(LEVELS))}
+    g.load_level(len(LEVELS) - 1)
+    g.state = Game.PLAYING
+    drain(g)
+    g.advance_level()
+    victory_ok = (g.state == Game.VICTORY
+                  and g.total_stars == len(LEVELS) * 3)
+    g.draw()
+
+    # 三种界面绘制均不报错
+    g.start_game()
+    g.draw()
+    draw_ok = g.state == Game.LEVEL_SELECT
+
+    check("T10", all([n1, c1, locked, entered, cleared_ok, nxt, kept,
+                      replayed, again, victory_ok, draw_ok]))
 
     print(f"\n结果：{passed} 通过，{failed} 失败")
     return 0 if failed == 0 else 1

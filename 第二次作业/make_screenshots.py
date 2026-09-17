@@ -127,9 +127,12 @@ quiet(g)
 g.draw()
 shot("06_game_over.png")
 
-# 7) 全部通关界面（真实连打 8 关，累计 24 星）
+# 7) 全部通关界面（真实连打全部关卡，累计满分星）
+from arrow_game import LEVELS
+g.cleared = set()
+g.level_stars = {}
 g.total_stars = 0
-for i in range(8):
+for i in range(len(LEVELS)):
     g.load_level(i)
     g.state = Game.PLAYING
     clear_level(g, 0.12)
@@ -172,5 +175,23 @@ assert g.stars == 1, "失误 2 次应为 1 星"
 quiet(g)
 g.draw()
 shot("10_clear_1star_mistakes.png")
+
+# 11) 关卡选择二级菜单（全新开局，仅首关解锁）
+g.cleared = set()
+g.level_stars = {}
+g.total_stars = 0
+g.state = Game.LEVEL_SELECT
+quiet(g)
+g.draw()
+shot("11_level_select.png")
+
+# 12) 关卡选择二级菜单（已通关若干关，显示解锁进度与星级）
+g.cleared = set(range(7))
+g.level_stars = {0: 3, 1: 3, 2: 3, 3: 3, 4: 2, 5: 3, 6: 1}
+g.total_stars = g.total_stars_of()
+g.state = Game.LEVEL_SELECT
+quiet(g)
+g.draw()
+shot("12_level_select_progress.png")
 
 print("done")
